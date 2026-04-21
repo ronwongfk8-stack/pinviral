@@ -107,8 +107,20 @@ interface StripeRuntime {
 // ── Env reader ────────────────────────────────────────────────────────────────
 
 function readEnv(key: string): string {
-  const e = process.env as any;
-  return e[key] || e[`VITE_${key}`] || e[`REACT_APP_${key}`] || "";
+  // Vite (Vercel) exposes VITE_ vars via import.meta.env
+  const vite = (typeof import.meta !== "undefined" && (import.meta as any).env)
+    ? (import.meta as any).env as Record<string, string>
+    : {} as Record<string, string>;
+  // process.env fallback for AI Studio / Node / CRA
+  const e = (typeof process !== "undefined" ? process.env : {}) as Record<string, string>;
+  return (
+    vite[`VITE_${key}`]   ||   // VITE_API_KEY  <- primary for Vercel builds
+    vite[key]             ||   // bare name in vite env
+    e[key]                ||   // process.env.API_KEY (AI Studio / Node)
+    e[`VITE_${key}`]      ||   // process.env.VITE_API_KEY
+    e[`REACT_APP_${key}`] ||   // CRA
+    ""
+  );
 }
 
 function readStripeFromEnv(): StripeRuntime {
@@ -566,7 +578,7 @@ export default function App() {
   // ── AI helpers ────────────────────────────────────────────────────────────
 
   const getAI = () => {
-    const k = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") || (process.env as any).API_KEY || process.env.GEMINI_API_KEY || "";
+    const k = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
     if (!k) throw new Error("API_KEY_MISSING");
     return new GoogleGenAI({ apiKey: k });
   };
@@ -694,8 +706,7 @@ export default function App() {
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
     // Resolve API key — prefer .env, fall back to aistudio dialog
-    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") ||
-      (process.env as any).API_KEY || process.env.GEMINI_API_KEY || "";
+    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
     if (!apiKey) {
       // Only open the aistudio key picker if there is truly no key anywhere
       if (window.aistudio?.openSelectKey) await window.aistudio.openSelectKey();
@@ -725,8 +736,7 @@ export default function App() {
     if (!lastVideoOperation?.response?.generatedVideos?.[0]?.video) return;
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
-    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") ||
-      (process.env as any).API_KEY || process.env.GEMINI_API_KEY || "";
+    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
     if (!apiKey) { setError("No API key found. Add API_KEY to your .env file."); return; }
 
     setIsExtending(true); setError(null);
