@@ -3,6 +3,9 @@
   "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
   "framework": "vite",
+  "env": {
+    "NODE_ENV": "development"
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
