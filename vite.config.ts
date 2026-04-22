@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   // Expose all VITE_ prefixed vars to the client automatically.
-  // No need for define — import.meta.env handles it natively.
+  // No need for define â€” import.meta.env handles it natively.
   build: {
     outDir: "dist",
     sourcemap: false,
