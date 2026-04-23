@@ -410,7 +410,7 @@ export default function App() {
         return updated;
       });
 
-      showToast("success", `Γ£ô ${pack.label} added! Credits updated.`);
+      showToast("success", `✓ ${pack.label} added! Credits updated.`);
       return;
     }
 
@@ -529,11 +529,11 @@ export default function App() {
       for (const p of plans) {
         const mk = `${p.key}_monthly` as keyof StripePriceIds;
         const ak = `${p.key}_annual`  as keyof StripePriceIds;
-        if (newIds[mk] && newIds[ak]) { log(`Γ£ô ${p.name} — already in .env`); continue; }
+        if (newIds[mk] && newIds[ak]) { log(`✓ ${p.name} — already in .env`); continue; }
         log(`Creating ${p.name}...`);
         const prod = await stripePost(stripe.secretKey, "products", { name: p.name, "metadata[plan]": p.key });
-        if (!newIds[mk]) { const mp = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month", "metadata[plan]":p.key }); (newIds as any)[mk]=mp.id; log(`  Γ£ô Monthly: ${mp.id}`); }
-        if (!newIds[ak]) { const ap = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year",  "metadata[plan]":p.key }); (newIds as any)[ak]=ap.id; log(`  Γ£ô Annual:  ${ap.id}`); }
+        if (!newIds[mk]) { const mp = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month", "metadata[plan]":p.key }); (newIds as any)[mk]=mp.id; log(`  ✓ Monthly: ${mp.id}`); }
+        if (!newIds[ak]) { const ap = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year",  "metadata[plan]":p.key }); (newIds as any)[ak]=ap.id; log(`  ✓ Annual:  ${ap.id}`); }
       }
 
       const topups = [
@@ -547,11 +547,11 @@ export default function App() {
       log("Creating top-up packs...");
       for (const t of topups) {
         const tk = t.key as keyof StripePriceIds;
-        if (newIds[tk]) { log(`  Γ£ô ${t.name} — already in .env`); continue; }
+        if (newIds[tk]) { log(`  ✓ ${t.name} — already in .env`); continue; }
         const prod = await stripePost(stripe.secretKey, "products", { name:t.name, "metadata[type]":"topup" });
         const pr   = await stripePost(stripe.secretKey, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
         (newIds as any)[tk] = pr.id;
-        log(`  Γ£ô ${t.name}: ${pr.id}`);
+        log(`  ✓ ${t.name}: ${pr.id}`);
       }
 
       const allReady = Object.keys(newIds).length === 13;
@@ -1000,7 +1000,7 @@ export default function App() {
               ))}
             </div>
 
-            {envHasKeys&&<div className="flex items-start gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><ShieldCheck size={16} className="text-emerald-600 mt-0.5 shrink-0"/><div><p className="text-sm font-bold text-emerald-800">Stripe keys auto-loaded from .env Γ£ô</p><p className="text-xs text-emerald-700 mt-0.5">Your <code className="bg-emerald-100 px-1 rounded">STRIPE_SECRET_KEY</code> and <code className="bg-emerald-100 px-1 rounded">STRIPE_PUBLISHABLE_KEY</code> were detected automatically.</p></div></div>}
+            {envHasKeys&&<div className="flex items-start gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><ShieldCheck size={16} className="text-emerald-600 mt-0.5 shrink-0"/><div><p className="text-sm font-bold text-emerald-800">Stripe keys auto-loaded from .env ✓</p><p className="text-xs text-emerald-700 mt-0.5">Your <code className="bg-emerald-100 px-1 rounded">STRIPE_SECRET_KEY</code> and <code className="bg-emerald-100 px-1 rounded">STRIPE_PUBLISHABLE_KEY</code> were detected automatically.</p></div></div>}
 
             {!envHasKeys&&(
               <div className="space-y-3">
@@ -1017,9 +1017,9 @@ export default function App() {
                 <button onClick={autoCreatePrices} disabled={isCreatingPrices} className="w-full py-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2">{isCreatingPrices?<><Loader2 className="animate-spin" size={16}/>Creating...</>:<><CreditCard size={16}/>Auto-Create Missing Prices</>}</button>
               </div>
             )}
-            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active — checkout is live Γ£ô</p></div>}
+            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active — checkout is live ✓</p></div>}
 
-            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("≡ƒÄë")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  Γ£ô")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">Γûè</p>}</div>}
+            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("≡ƒÄë")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  ✓")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">Γûè</p>}</div>}
             {creationError&&<div className="flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={13} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{creationError}</p></div>}
           </div>
         </motion.div>
@@ -1069,7 +1069,7 @@ export default function App() {
                 stripeStatus==="live"?"bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100":
                 stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
                 "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="live"?"Stripe Γ£ô":stripeStatus==="partial"?"Stripe ΓÜá":"Setup Stripe"}
+              <CreditCard size={12}/>{stripeStatus==="live"?"Stripe ✓":stripeStatus==="partial"?"Stripe ΓÜá":"Setup Stripe"}
             </button>
 
             {/* Account button */}
@@ -1322,7 +1322,7 @@ export default function App() {
                       </div>
                     </>
                   ):(
-                    <div className="aspect-[2/3] max-w-[280px] mx-auto bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center gap-3 text-center p-6"><div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ImageIcon size={22} className="text-slate-200"/></div><div><p className="font-black text-slate-400 text-sm">Pin preview</p><p className="text-xs text-slate-300 mt-0.5">Complete steps 1ΓÇô4</p></div></div>
+                    <div className="aspect-[2/3] max-w-[280px] mx-auto bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center gap-3 text-center p-6"><div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ImageIcon size={22} className="text-slate-200"/></div><div><p className="font-black text-slate-400 text-sm">Pin preview</p><p className="text-xs text-slate-300 mt-0.5">Complete steps 1–4</p></div></div>
                   )}
                 </div>
 
@@ -1430,7 +1430,7 @@ export default function App() {
       <AnimatePresence>{showStripeSetup&&<StripeSetupModal/>}</AnimatePresence>
 
       {/* Animation overlay */}
-      <AnimatePresence>{(isAnimating||isExtending)&&<div className="fixed inset-0 z-[110] flex items-center justify-center bg-white/80 backdrop-blur-md"><div className="text-center space-y-4"><div className="relative w-20 h-20 mx-auto"><div className="absolute inset-0 border-4 border-rose-100 rounded-full"/><div className="absolute inset-0 border-4 border-rose-600 rounded-full border-t-transparent animate-spin"/><div className="absolute inset-0 flex items-center justify-center text-rose-600"><Wand2 size={28} className="animate-pulse"/></div></div><div><h4 className="text-lg font-bold text-slate-900">{isExtending?"Extending Video...":"Creating Magic..."}</h4><p className="text-slate-500 text-sm">~60ΓÇô90 seconds</p></div></div></div>}</AnimatePresence>
+      <AnimatePresence>{(isAnimating||isExtending)&&<div className="fixed inset-0 z-[110] flex items-center justify-center bg-white/80 backdrop-blur-md"><div className="text-center space-y-4"><div className="relative w-20 h-20 mx-auto"><div className="absolute inset-0 border-4 border-rose-100 rounded-full"/><div className="absolute inset-0 border-4 border-rose-600 rounded-full border-t-transparent animate-spin"/><div className="absolute inset-0 flex items-center justify-center text-rose-600"><Wand2 size={28} className="animate-pulse"/></div></div><div><h4 className="text-lg font-bold text-slate-900">{isExtending?"Extending Video...":"Creating Magic..."}</h4><p className="text-slate-500 text-sm">~60–90 seconds</p></div></div></div>}</AnimatePresence>
     </div>
   );
 }
