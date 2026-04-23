@@ -5,7 +5,7 @@
  * ΓöÇΓöÇ .env variables expected ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
  *  STRIPE_SECRET_KEY=sk_test_...
  *  STRIPE_PUBLISHABLE_KEY=pk_test_...
- *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional ΓÇö auto-created if absent)
+ *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional — auto-created if absent)
  *  STRIPE_PRICE_STARTER_ANNUAL=price_...
  *  STRIPE_PRICE_PRO_MONTHLY=price_...
  *  STRIPE_PRICE_PRO_ANNUAL=price_...
@@ -391,7 +391,7 @@ export default function App() {
 
     // ΓöÇΓöÇ Top-up path ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     // topupKey is present when the user bought a credit pack (not a plan upgrade).
-    // planKey will be "topup" in this case ΓÇö it is NOT in PLAN_DEFS intentionally.
+    // planKey will be "topup" in this case — it is NOT in PLAN_DEFS intentionally.
     if (topupKey) {
       const pack = TOPUP_PACKS.find(p => p.key === topupKey);
       if (!pack) { showToast("error", "Top-up pack not recognised. Contact support."); return; }
@@ -529,7 +529,7 @@ export default function App() {
       for (const p of plans) {
         const mk = `${p.key}_monthly` as keyof StripePriceIds;
         const ak = `${p.key}_annual`  as keyof StripePriceIds;
-        if (newIds[mk] && newIds[ak]) { log(`Γ£ô ${p.name} ΓÇö already in .env`); continue; }
+        if (newIds[mk] && newIds[ak]) { log(`Γ£ô ${p.name} — already in .env`); continue; }
         log(`Creating ${p.name}...`);
         const prod = await stripePost(stripe.secretKey, "products", { name: p.name, "metadata[plan]": p.key });
         if (!newIds[mk]) { const mp = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month", "metadata[plan]":p.key }); (newIds as any)[mk]=mp.id; log(`  Γ£ô Monthly: ${mp.id}`); }
@@ -547,7 +547,7 @@ export default function App() {
       log("Creating top-up packs...");
       for (const t of topups) {
         const tk = t.key as keyof StripePriceIds;
-        if (newIds[tk]) { log(`  Γ£ô ${t.name} ΓÇö already in .env`); continue; }
+        if (newIds[tk]) { log(`  Γ£ô ${t.name} — already in .env`); continue; }
         const prod = await stripePost(stripe.secretKey, "products", { name:t.name, "metadata[type]":"topup" });
         const pr   = await stripePost(stripe.secretKey, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
         (newIds as any)[tk] = pr.id;
@@ -627,7 +627,7 @@ export default function App() {
     try {
       const ai = getAI();
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
-      const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] ΓÇö unchanged ΓÇö placed in [50-80 word scene]..." } ...5 total ] }`;
+      const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] — unchanged — placed in [50-80 word scene]..." } ...5 total ] }`;
       let r: any;
       try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
       catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
@@ -674,7 +674,7 @@ export default function App() {
       const ai = getAI(); const prompt = buildPrompt(); const parts: any[] = [];
       if (uploadedImage?.startsWith("data:")) parts.push({ inlineData:{ data:uploadedImage.split(",")[1], mimeType:uploadedImage.split(";")[0].split(":")[1] } });
       const kd = productAnalysis?.keyVisualDetails||""; const pd = productAnalysis?.productDescription||productName||"the product";
-      parts.push({ text: uploadedImage ? `Reference product image above. CRITICAL: Output product IDENTICAL ΓÇö same color, shape, branding. ONLY change background/setting/lighting. ${kd?"Preserve: "+kd+".":""} Product: ${pd}. Scene: ${prompt}. Output: 2:3 ratio, professional Pinterest photography.` : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy&&selectedAngleIndex!==null?strategy.angles[selectedAngleIndex].psychology:"professional lifestyle photography"}.` });
+      parts.push({ text: uploadedImage ? `Reference product image above. CRITICAL: Output product IDENTICAL — same color, shape, branding. ONLY change background/setting/lighting. ${kd?"Preserve: "+kd+".":""} Product: ${pd}. Scene: ${prompt}. Output: 2:3 ratio, professional Pinterest photography.` : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy&&selectedAngleIndex!==null?strategy.angles[selectedAngleIndex].psychology:"professional lifestyle photography"}.` });
       let r: any;
       try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3.1-flash-image-preview", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3",imageSize:"1K"}} })); }
       catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.5-flash-image", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3"}} })); else throw e; }
@@ -705,7 +705,7 @@ export default function App() {
     const src = generatedImage||uploadedImage; if (!src) return;
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
-    // Resolve API key ΓÇö prefer .env, fall back to aistudio dialog
+    // Resolve API key — prefer .env, fall back to aistudio dialog
     const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
     if (!apiKey) {
       // Only open the aistudio key picker if there is truly no key anywhere
@@ -846,7 +846,7 @@ export default function App() {
                 <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-white/80 rounded-full transition-all duration-700" style={{width:`${100-imageUsedPct}%`}}/></div>
               </div>
               <div>
-                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><Video size={11}/>Videos</span><span className="font-black">{session.videosLeft} / {session.videosTotal || "ΓÇö"} left</span></div>
+                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><Video size={11}/>Videos</span><span className="font-black">{session.videosLeft} / {session.videosTotal || "—"} left</span></div>
                 <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-rose-400 rounded-full transition-all duration-700" style={{width:`${100-videoUsedPct}%`}}/></div>
               </div>
             </div>
@@ -917,7 +917,7 @@ export default function App() {
               "bg-slate-50 border-slate-200 text-slate-500")}>
               <CreditCard size={15}/>
               {stripeStatus==="live" ? "Stripe connected ┬╖ Test mode" :
-               stripeStatus==="partial" ? "Stripe keys found ΓÇö prices needed" :
+               stripeStatus==="partial" ? "Stripe keys found — prices needed" :
                <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
             </div>
 
@@ -1017,7 +1017,7 @@ export default function App() {
                 <button onClick={autoCreatePrices} disabled={isCreatingPrices} className="w-full py-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2">{isCreatingPrices?<><Loader2 className="animate-spin" size={16}/>Creating...</>:<><CreditCard size={16}/>Auto-Create Missing Prices</>}</button>
               </div>
             )}
-            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active ΓÇö checkout is live Γ£ô</p></div>}
+            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active — checkout is live Γ£ô</p></div>}
 
             {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("≡ƒÄë")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  Γ£ô")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">Γûè</p>}</div>}
             {creationError&&<div className="flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={13} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{creationError}</p></div>}
@@ -1090,7 +1090,7 @@ export default function App() {
             <h2 className="text-4xl sm:text-6xl font-extrabold text-slate-900 mb-4 tracking-tight">
               What are you <span className="text-rose-600">selling</span> today?
             </h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-8">Follow the steps below ΓÇö product to viral pin in minutes.</p>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-8">Follow the steps below — product to viral pin in minutes.</p>
             <div className="max-w-2xl mx-auto space-y-3">
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
@@ -1115,7 +1115,7 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
               <div className="lg:col-span-7 space-y-10">
 
-                {/* Step 1 ΓÇö Viral Angle */}
+                {/* Step 1 — Viral Angle */}
                 <StepCard number={1} title="Choose Viral Angle" subtitle="Pick the psychology behind your pin">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {strategy.angles.map((angle,i)=>(
@@ -1130,8 +1130,8 @@ export default function App() {
                   </div>
                 </StepCard>
 
-                {/* Step 2 ΓÇö Upload */}
-                <StepCard number={2} title="Upload Your Product Photo" subtitle="AI keeps your product identical ΓÇö only the world around it changes">
+                {/* Step 2 — Upload */}
+                <StepCard number={2} title="Upload Your Product Photo" subtitle="AI keeps your product identical — only the world around it changes">
                   <div className="space-y-4">
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -1212,7 +1212,7 @@ export default function App() {
                   </div>
                 </StepCard>
 
-                {/* Step 3 ΓÇö Copy & SEO */}
+                {/* Step 3 — Copy & SEO */}
                 <StepCard number={3} title="Copy & SEO Content" subtitle="Headlines, description and tags ready to copy" badge="Auto-generated">
                   {selectedAngleIndex!==null&&(
                     <div className="space-y-4">
@@ -1226,7 +1226,7 @@ export default function App() {
                   )}
                 </StepCard>
 
-                {/* Step 4 ΓÇö Generate Visual */}
+                {/* Step 4 — Generate Visual */}
                 <StepCard number={4} title="Generate Your Pin Visual" subtitle="AI creates a stunning product image based on your angle and scene">
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     {sceneInfo&&<div className={cn("flex items-center gap-2 px-4 py-2 rounded-xl border w-fit text-xs font-bold",sceneInfo.color==="violet"?"bg-violet-50 border-violet-100 text-violet-700":"bg-rose-50 border-rose-100 text-rose-700")}><div className={cn("w-1.5 h-1.5 rounded-full animate-pulse",sceneInfo.color==="violet"?"bg-violet-500":"bg-rose-500")}/>Scene: {sceneInfo.label}</div>}
@@ -1243,8 +1243,8 @@ export default function App() {
                   </div>
                 </StepCard>
 
-                {/* Step 5 ΓÇö Voiceover */}
-                <StepCard number={5} title="Voiceover Script" subtitle="Optional ΓÇö ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
+                {/* Step 5 — Voiceover */}
+                <StepCard number={5} title="Voiceover Script" subtitle="Optional — ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
                   <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100">
                       <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec ┬╖ Matched to your angle</p></div></div>
@@ -1266,7 +1266,7 @@ export default function App() {
                   </div>
                 </StepCard>
 
-                {/* Step 6 ΓÇö Animate & Export */}
+                {/* Step 6 — Animate & Export */}
                 <StepCard number={6} title="Animate & Export" subtitle="Bring your pin to life as video, then download everything" dimmed={!generatedImage&&!uploadedImage}>
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <div className="space-y-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Animation Vibe</p><textarea className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none transition-all h-20 resize-none font-medium" value={animationPrompt} onChange={e=>setAnimationPrompt(e.target.value)} placeholder="Describe the motion style..."/></div>
@@ -1358,7 +1358,7 @@ export default function App() {
         {!strategy&&!isLoading&&(
           <motion.div initial={{opacity:0}} animate={{opacity:1}} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
             <FeatureCard icon={<Zap className="text-rose-500"/>}       title="Viral Psychology"     desc="Proven impulse-buy triggers that get your pins saved and shared."/>
-            <FeatureCard icon={<Shuffle className="text-violet-500"/>} title="5 Auto Scene Options" desc="Upload once ΓÇö AI places your product in 5 stunning Pinterest-ready scenes."/>
+            <FeatureCard icon={<Shuffle className="text-violet-500"/>} title="5 Auto Scene Options" desc="Upload once — AI places your product in 5 stunning Pinterest-ready scenes."/>
             <FeatureCard icon={<Mic className="text-rose-500"/>}       title="Voiceover Scripts"    desc="Ready-to-record script matched to your pin's tone and angle."/>
           </motion.div>
         )}
@@ -1367,9 +1367,9 @@ export default function App() {
         <section id="pricing-section" className="py-24 border-t border-slate-100">
           <div className="max-w-6xl mx-auto">
             <div className="text-center max-w-3xl mx-auto mb-12">
-              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content ΓÇö <span className="text-rose-600">Without Designers</span></h2>
+              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content — <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
-              {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys found ΓÇö run auto-create to generate price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
+              {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys found — run auto-create to generate price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
               {stripe.ready&&<div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl mb-6"><ShieldCheck size={14} className="text-emerald-600"/><p className="text-sm text-emerald-700 font-medium">Stripe connected ┬╖ Test mode ┬╖ All prices ready</p></div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
@@ -1411,7 +1411,7 @@ export default function App() {
                 {session.plan==="free"?<div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold"><Check size={15}/>You're on the free plan</div>:<button className="w-full px-8 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl transition-all flex items-center justify-center gap-2">Try for Free<ArrowRight size={15}/></button>}
               </div>
             </div>
-            <div className="text-center"><p className="text-xl md:text-2xl font-bold text-slate-400 italic">"Create scroll-stopping content at scale ΓÇö <span className="text-slate-900">without hiring designers or editors.</span>"</p></div>
+            <div className="text-center"><p className="text-xl md:text-2xl font-bold text-slate-400 italic">"Create scroll-stopping content at scale — <span className="text-slate-900">without hiring designers or editors.</span>"</p></div>
           </div>
         </section>
       </main>
