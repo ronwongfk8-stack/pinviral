@@ -916,7 +916,7 @@ export default function App() {
               stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700":
               "bg-slate-50 border-slate-200 text-slate-500")}>
               <CreditCard size={15}/>
-              {stripeStatus==="live" ? "Stripe connected ┬╖ Test mode" :
+              {stripeStatus==="live" ? "Stripe connected · Test mode" :
                stripeStatus==="partial" ? "Stripe keys found — prices needed" :
                <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
             </div>
@@ -950,7 +950,7 @@ export default function App() {
               <button key={key} onClick={()=>startCheckout(key,"monthly")} disabled={!!checkoutLoading}
                 className={cn("w-full flex items-center justify-between px-4 py-3.5 rounded-2xl border-2 transition-all hover:scale-[1.01] disabled:opacity-60",
                   p.popular?"border-rose-500 bg-rose-50":"border-slate-100 hover:border-rose-200")}>
-                <div className="text-left"><p className="font-black text-slate-900 text-sm">{p.emoji} {key.charAt(0).toUpperCase()+key.slice(1)}{p.popular&&<span className="text-rose-600 text-[10px] ml-1">Popular</span>}</p><p className="text-[10px] text-slate-400">{p.images} images ┬╖ {p.videos} videos/mo</p></div>
+                <div className="text-left"><p className="font-black text-slate-900 text-sm">{p.emoji} {key.charAt(0).toUpperCase()+key.slice(1)}{p.popular&&<span className="text-rose-600 text-[10px] ml-1">Popular</span>}</p><p className="text-[10px] text-slate-400">{p.images} images · {p.videos} videos/mo</p></div>
                 <div className="flex items-center gap-2">{lk&&<Loader2 size={13} className="animate-spin text-rose-400"/>}<span className="font-black text-rose-600 text-sm">${p.monthly}/mo</span></div>
               </button>
             );
@@ -984,7 +984,7 @@ export default function App() {
           className="bg-white rounded-[2rem] shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
           <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white sticky top-0 z-10">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">Test mode ┬╖ Auto-reads from .env</p></div></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">Test mode · Auto-reads from .env</p></div></div>
               <button onClick={()=>setShowStripeSetup(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={17}/></button>
             </div>
           </div>
@@ -1173,7 +1173,7 @@ export default function App() {
                           className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                           <div className="px-6 pt-5 pb-4 border-b border-slate-100">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2.5"><div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Shuffle size={15}/></div><div><p className="font-black text-slate-900 text-sm">Scene Environment</p><p className="text-[10px] text-slate-400">Same product ┬╖ Different world</p></div></div>
+                              <div className="flex items-center gap-2.5"><div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Shuffle size={15}/></div><div><p className="font-black text-slate-900 text-sm">Scene Environment</p><p className="text-[10px] text-slate-400">Same product · Different world</p></div></div>
                               {isAnalyzingProduct&&<div className="flex items-center gap-1.5 text-violet-600 text-[10px] font-bold bg-violet-50 px-2.5 py-1 rounded-full border border-violet-100 animate-pulse"><Loader2 size={9} className="animate-spin"/>Generating...</div>}
                             </div>
                             {productAnalysis?.productDescription&&<motion.div initial={{opacity:0}} animate={{opacity:1}} className="mt-3 space-y-2">
@@ -1247,7 +1247,7 @@ export default function App() {
                 <StepCard number={5} title="Voiceover Script" subtitle="Optional — ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
                   <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100">
-                      <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec ┬╖ Matched to your angle</p></div></div>
+                      <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec · Matched to your angle</p></div></div>
                       <div className="space-y-2 mb-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tone</p><div className="grid grid-cols-5 gap-2">{VOICE_TONES.map(t=><button key={t.id} onClick={()=>setSelectedVoiceTone(t.id)} className={cn("flex flex-col items-center gap-1 p-2.5 rounded-2xl border-2 transition-all hover:scale-[1.03]",selectedVoiceTone===t.id?"border-rose-500 bg-rose-50":"border-slate-100 bg-slate-50 hover:border-rose-200")}><span className="text-base">{t.emoji}</span><p className={cn("text-[9px] font-black uppercase tracking-tight",selectedVoiceTone===t.id?"text-rose-700":"text-slate-500")}>{t.label}</p></button>)}</div><p className="text-[11px] text-slate-400">{VOICE_TONES.find(t=>t.id===selectedVoiceTone)?.desc}</p></div>
                       <button onClick={generateVoiceover} disabled={isGeneratingVoiceover||selectedAngleIndex===null} className="w-full py-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-50">{isGeneratingVoiceover?<><Loader2 className="animate-spin" size={15}/>Writing...</>:<><FileText size={15}/>Generate Script</>}</button>
                     </div>
@@ -1273,7 +1273,7 @@ export default function App() {
                     <div className="space-y-3">
                       {(generatedImage||uploadedImage)&&<button onClick={downloadImage} className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={16}/>Download Pin Image</button>}
                       {session.videosLeft<=0?<button onClick={()=>setShowUpgradeModal(true)} className="w-full py-4 bg-slate-100 border-2 border-dashed border-slate-300 text-slate-500 font-black rounded-2xl flex items-center justify-center gap-2 hover:border-indigo-400 hover:text-indigo-500 transition-all"><Lock size={16}/>Upgrade for Video ({session.plan==="free"?"paid plan required":"add video top-up"})</button>:
-                       (!animatedVideoUrl&&!isAnimating&&(generatedImage||uploadedImage))?<button onClick={animateImage} className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Zap size={16}/>Bring It To Life ┬╖ {session.videosLeft} left</button>:null}
+                       (!animatedVideoUrl&&!isAnimating&&(generatedImage||uploadedImage))?<button onClick={animateImage} className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Zap size={16}/>Bring It To Life · {session.videosLeft} left</button>:null}
                       {animatedVideoUrl&&<div className="space-y-3"><div className="aspect-video rounded-2xl overflow-hidden bg-slate-100 shadow-inner"><video src={animatedVideoUrl} className="w-full h-full object-cover" controls autoPlay loop muted/></div>
                         <div className="grid grid-cols-2 gap-2">
                           <button onClick={downloadVideo} className="py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={15}/>Download</button>
@@ -1282,7 +1282,7 @@ export default function App() {
                           ):(
                             <button onClick={extendVideo} disabled={isExtending||!lastVideoOperation}
                               className="py-3.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-black rounded-2xl shadow-xl shadow-violet-100 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01] text-sm">
-                              {isExtending?<><Loader2 className="animate-spin" size={15}/>Extending...</>:<><RefreshCw size={15}/>Extend ┬╖ {session.videosLeft} left</>}
+                              {isExtending?<><Loader2 className="animate-spin" size={15}/>Extending...</>:<><RefreshCw size={15}/>Extend · {session.videosLeft} left</>}
                             </button>
                           )}
                         </div>
@@ -1341,7 +1341,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">{planDef.emoji}</span>
-                      <div><p className="text-xs font-black text-slate-800 capitalize">{session.plan} Plan</p><p className="text-[9px] text-slate-400">{session.imagesLeft} imgs ┬╖ {session.videosLeft} vids left</p></div>
+                      <div><p className="text-xs font-black text-slate-800 capitalize">{session.plan} Plan</p><p className="text-[9px] text-slate-400">{session.imagesLeft} imgs · {session.videosLeft} vids left</p></div>
                     </div>
                     <button onClick={()=>setShowAccountModal(true)} className="px-3 py-1.5 text-[10px] font-black text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all flex items-center gap-1"><Settings size={11}/>Manage</button>
                   </div>
@@ -1370,7 +1370,7 @@ export default function App() {
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content — <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
               {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys found — run auto-create to generate price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
-              {stripe.ready&&<div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl mb-6"><ShieldCheck size={14} className="text-emerald-600"/><p className="text-sm text-emerald-700 font-medium">Stripe connected ┬╖ Test mode ┬╖ All prices ready</p></div>}
+              {stripe.ready&&<div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl mb-6"><ShieldCheck size={14} className="text-emerald-600"/><p className="text-sm text-emerald-700 font-medium">Stripe connected · Test mode · All prices ready</p></div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
 
@@ -1420,7 +1420,7 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-3"><div className="w-6 h-6 bg-rose-600 rounded flex items-center justify-center text-white"><Sparkles size={12}/></div><span className="font-bold text-slate-800">PinViral</span></div>
           <p className="text-slate-400 text-sm">Built for e-commerce brands and lifestyle creators. ┬⌐ 2026 PinViral AI.</p>
-          <p className="text-slate-300 text-xs mt-1 flex items-center justify-center gap-2"><CreditCard size={11}/>Stripe Test Mode ┬╖ No real charges</p>
+          <p className="text-slate-300 text-xs mt-1 flex items-center justify-center gap-2"><CreditCard size={11}/>Stripe Test Mode · No real charges</p>
         </div>
       </footer>
 
