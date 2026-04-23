@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * ΓöÇΓöÇ .env variables expected ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ * ── .env variables expected ────────────────────────────────────────────────
  *  STRIPE_SECRET_KEY=sk_test_...
  *  STRIPE_PUBLISHABLE_KEY=pk_test_...
  *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional — auto-created if absent)
@@ -19,7 +19,7 @@
  *  STRIPE_PRICE_TOPUP_BUNDLE_M=price_...
  *  STRIPE_PRICE_TOPUP_BUNDLE_L=price_...
  *  API_KEY=...  or  GEMINI_API_KEY=...
- * ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -60,7 +60,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, initialDelay =
   throw lastError;
 }
 
-// ΓöÇΓöÇ Types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ViralAngle {
   title: string; hook: string; psychology: string; headlines: string[];
@@ -73,7 +73,7 @@ interface ProductAnalysis { productDescription: string; keyVisualDetails: string
 interface VoiceoverScript { tone: string; duration: string; script: string; hooks: string[]; }
 type VoiceTone = "energetic" | "calm" | "luxury" | "trendy" | "asmr";
 
-// ΓöÇΓöÇ SaaS session (persisted to localStorage) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── SaaS session (persisted to localStorage) ──────────────────────────────────
 interface UserSession {
   plan: string;                  // "free" | "starter" | "pro" | "scale" | "agency"
   billing: "monthly" | "annual";
@@ -104,7 +104,7 @@ interface StripeRuntime {
   ready: boolean; keysPresent: boolean;
 }
 
-// ΓöÇΓöÇ Env reader ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── Env reader ────────────────────────────────────────────────────────────────
 
 function readEnv(key: string): string {
   // Vite (Vercel) exposes VITE_ vars via import.meta.env
@@ -147,7 +147,7 @@ function readStripeFromEnv(): StripeRuntime {
   return { secretKey, publishableKey, priceIds, ready, keysPresent };
 }
 
-// ΓöÇΓöÇ Constants ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const PLAN_DEFS: Record<string, {
   monthly: number; annual: number; images: number; videos: number;
@@ -187,7 +187,7 @@ const SESSION_KEY   = "pinviral_session_v2";
 const STRIPE_SK_KEY = "pinviral_stripe_sk";
 const STRIPE_PX_KEY = "pinviral_stripe_px";
 
-// ΓöÇΓöÇ Default session ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── Default session ───────────────────────────────────────────────────────────
 
 const defaultSession = (): UserSession => ({
   plan: "free", billing: "monthly",
@@ -195,7 +195,7 @@ const defaultSession = (): UserSession => ({
   topupHistory: [],
 });
 
-// ΓöÇΓöÇ Stripe REST helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── Stripe REST helpers ───────────────────────────────────────────────────────
 
 async function stripePost(sk: string, endpoint: string, params: Record<string, string>) {
   const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
@@ -217,7 +217,7 @@ async function stripeGet(sk: string, endpoint: string, params?: Record<string, s
   return data;
 }
 
-// ΓöÇΓöÇ StepCard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── StepCard ──────────────────────────────────────────────────────────────────
 
 function StepCard({ number, title, subtitle, badge, children, dimmed = false }:
   { number: number; title: string; subtitle?: string; badge?: string; children: React.ReactNode; dimmed?: boolean }) {
@@ -238,7 +238,7 @@ function StepCard({ number, title, subtitle, badge, children, dimmed = false }:
   );
 }
 
-// ΓöÇΓöÇ App ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+// ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
   // SaaS session
@@ -297,7 +297,7 @@ export default function App() {
 
   const previewRef = useRef<HTMLDivElement>(null);
 
-  // ΓöÇΓöÇ Persist session ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Persist session ───────────────────────────────────────────────────────
 
   const saveSession = useCallback((s: UserSession) => {
     setSession(s);
@@ -320,7 +320,7 @@ export default function App() {
     });
   };
 
-  // ΓöÇΓöÇ Init ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     checkApiKey();
@@ -378,18 +378,18 @@ export default function App() {
     if (session.imagesLeft <= 2 && session.imagesLeft > 0 && session.plan === "free") setShowUpgradeModal(true);
   }, [session.imagesLeft]);
 
-  // ΓöÇΓöÇ Toast helper ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Toast helper ──────────────────────────────────────────────────────────
 
   const showToast = (type: "success"|"error", message: string) => {
     setPaymentToast({ type, message });
     setTimeout(() => setPaymentToast(null), 5000);
   };
 
-  // ΓöÇΓöÇ Plan activation ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Plan activation ───────────────────────────────────────────────────────
 
   const activatePlan = (planKey: string, billing: "monthly"|"annual", customerId?: string | null, subId?: string | null, topupKey?: string) => {
 
-    // ΓöÇΓöÇ Top-up path ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    // ── Top-up path ───────────────────────────────────────────────────────
     // topupKey is present when the user bought a credit pack (not a plan upgrade).
     // planKey will be "topup" in this case — it is NOT in PLAN_DEFS intentionally.
     if (topupKey) {
@@ -414,7 +414,7 @@ export default function App() {
       return;
     }
 
-    // ΓöÇΓöÇ Subscription plan upgrade path ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+    // ── Subscription plan upgrade path ───────────────────────────────────
     const plan = PLAN_DEFS[planKey];
     if (!plan) { showToast("error", `Unknown plan: ${planKey}`); return; }
 
@@ -444,7 +444,7 @@ export default function App() {
     showToast("success", `≡ƒÄë ${plan.emoji} ${planKey.charAt(0).toUpperCase()+planKey.slice(1)} plan activated!`);
   };
 
-  // ΓöÇΓöÇ Stripe Checkout ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Stripe Checkout ───────────────────────────────────────────────────────
 
   const startCheckout = async (planKey: string, billing: "monthly"|"annual" = "monthly", topupKey?: string) => {
     if (!stripe.keysPresent || !stripe.ready) {
@@ -486,7 +486,7 @@ export default function App() {
     }
   };
 
-  // ΓöÇΓöÇ Stripe Customer Portal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Stripe Customer Portal ────────────────────────────────────────────────
 
   const openBillingPortal = async () => {
     if (!stripe.keysPresent) { setShowStripeSetup(true); return; }
@@ -508,7 +508,7 @@ export default function App() {
     }
   };
 
-  // ΓöÇΓöÇ Auto-create Stripe prices ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Auto-create Stripe prices ─────────────────────────────────────────────
 
   const autoCreatePrices = async () => {
     if (!stripe.keysPresent) return;
@@ -575,7 +575,7 @@ export default function App() {
     setStripe(updated);
   };
 
-  // ΓöÇΓöÇ AI helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── AI helpers ────────────────────────────────────────────────────────────
 
   const getAI = () => {
     const k = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
@@ -813,7 +813,7 @@ export default function App() {
   const planDef = PLAN_DEFS[session.plan] || PLAN_DEFS.free;
   const stripeStatus = stripe.ready ? "live" : stripe.keysPresent ? "partial" : "none";
 
-  // ΓöÇΓöÇ Account Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Account Modal ─────────────────────────────────────────────────────────
 
   const AccountModal = () => {
     const imageUsedPct = session.imagesTotal > 0 ? Math.min(100, ((session.imagesTotal - session.imagesLeft) / session.imagesTotal) * 100) : 0;
@@ -932,7 +932,7 @@ export default function App() {
     );
   };
 
-  // ΓöÇΓöÇ Upgrade Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Upgrade Modal ─────────────────────────────────────────────────────────
 
   const UpgradeModal = () => (
     <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
@@ -973,7 +973,7 @@ export default function App() {
     </div>
   );
 
-  // ΓöÇΓöÇ Stripe Setup Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Stripe Setup Modal ────────────────────────────────────────────────────
 
   const StripeSetupModal = () => {
     const envHasKeys = !!(readEnv("STRIPE_SECRET_KEY") || readEnv("STRIPE_PUBLISHABLE_KEY"));
@@ -1027,7 +1027,7 @@ export default function App() {
     );
   };
 
-  // ΓöÇΓöÇ Render ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-rose-100 selection:text-rose-600">
