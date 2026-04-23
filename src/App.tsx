@@ -1069,7 +1069,7 @@ export default function App() {
                 stripeStatus==="live"?"bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100":
                 stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
                 "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="live"?"Stripe ✓":stripeStatus==="partial"?"Stripe ΓÜá":"Setup Stripe"}
+              <CreditCard size={12}/>{stripeStatus==="live"?"Stripe ✓":stripeStatus==="partial"?"Stripe ⚠️":"Setup Stripe"}
             </button>
 
             {/* Account button */}
