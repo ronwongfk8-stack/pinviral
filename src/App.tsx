@@ -558,7 +558,7 @@ export default function App() {
       const updated  = { ...stripe, priceIds: newIds, ready: allReady };
       setStripe(updated);
       try { localStorage.setItem("pinviral_prices", JSON.stringify(newIds)); } catch {}
-      log(""); log("≡ƒÄë All done! Copy these to your .env:");
+      log(""); log("All done! Copy these to your .env:");
       Object.entries(newIds).forEach(([k, v]) => log(`  STRIPE_PRICE_${k.toUpperCase()}=${v}`));
     } catch (err: any) {
       setCreationError(err.message || "Failed to create prices.");
