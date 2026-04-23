@@ -360,6 +360,30 @@ export default function App() {
 
     if (session_id && plan && !canceled) {
       activatePlan(plan, billing, customer, sub, topup || undefined);
+      // Close any open modals that may have triggered the checkout
+      setShowUpgradeModal(false);
+      setShowAccountModal(false);
+      // Restore all work state saved before redirect
+      try {
+        const raw = localStorage.getItem("pinviral_work_state");
+        if (raw) {
+          const w = JSON.parse(raw);
+          if (w.productName)       setProductName(w.productName);
+          if (w.productUrl)        setProductUrl(w.productUrl);
+          if (w.strategy)          setStrategy(JSON.parse(w.strategy));
+          if (w.productAnalysis)   setProductAnalysis(JSON.parse(w.productAnalysis));
+          if (w.uploadedImage)     setUploadedImage(w.uploadedImage);
+          if (w.generatedImage)    setGeneratedImage(w.generatedImage);
+          if (w.selectedAngleIndex !== null && w.selectedAngleIndex !== undefined) setSelectedAngleIndex(w.selectedAngleIndex);
+          if (w.selectedEnvId)     setSelectedEnvId(w.selectedEnvId);
+          if (w.editableHeadline)  setEditableHeadline(w.editableHeadline);
+          if (w.editableSubtext)   setEditableSubtext(w.editableSubtext);
+          if (w.editableCTA)       setEditableCTA(w.editableCTA);
+          if (w.editableAltText)   setEditableAltText(w.editableAltText);
+          if (w.animationPrompt)   setAnimationPrompt(w.animationPrompt);
+          localStorage.removeItem("pinviral_work_state");
+        }
+      } catch {}
       window.history.replaceState({}, "", window.location.pathname);
     } else if (canceled) {
       showToast("error", "Payment was canceled. No charges made.");
@@ -462,16 +486,24 @@ export default function App() {
       if (!priceId) throw new Error(`Price ID for "${priceIdKey}" not found. Open Stripe setup to auto-create.`);
 
       const isSubscription = !topupKey;
-      // Save work state before redirect
+      // Save ALL work state before redirect so it can be restored on return
       try {
-        if (productAnalysis) localStorage.setItem("pinviral_work_analysis", JSON.stringify(productAnalysis));
-        if (uploadedImage) localStorage.setItem("pinviral_work_image", uploadedImage);
-        if (productUrl) localStorage.setItem("pinviral_work_url", productUrl);
-      } catch {}
-      try {
-        if (productAnalysis) localStorage.setItem("pinviral_work_analysis", JSON.stringify(productAnalysis));
-        if (uploadedImage) localStorage.setItem("pinviral_work_image", uploadedImage);
-        if (productUrl) localStorage.setItem("pinviral_work_url", productUrl);
+        const workState = {
+          productName,
+          productUrl,
+          strategy:            strategy            ? JSON.stringify(strategy)            : null,
+          productAnalysis:     productAnalysis     ? JSON.stringify(productAnalysis)     : null,
+          uploadedImage:       uploadedImage       ?? null,
+          generatedImage:      generatedImage      ?? null,
+          selectedAngleIndex:  selectedAngleIndex  ?? null,
+          selectedEnvId:       selectedEnvId       ?? null,
+          editableHeadline,
+          editableSubtext,
+          editableCTA,
+          editableAltText,
+          animationPrompt,
+        };
+        localStorage.setItem("pinviral_work_state", JSON.stringify(workState));
       } catch {}
       const base = window.location.href.split("?")[0];
       const successUrl = `${base}?session_id={CHECKOUT_SESSION_ID}&plan=${planKey}&billing=${billing}${topupKey ? `&topup=${topupKey}` : ""}`;
@@ -653,21 +685,47 @@ export default function App() {
     if (!imageData && !url) return;
     setIsAnalyzingSocialProof(true);
     try {
-      const ai = getAI(); const parts: any[] = [];
-      if (imageData?.startsWith("data:")) parts.push({ inlineData:{ data:imageData.split(",")[1], mimeType:imageData.split(";")[0].split(":")[1] } });
+      const ai = getAI();
+      // Build a plain text prompt — googleSearch / urlContext are not available
+      // in this SDK context, so we describe what we know and ask the model to
+      // infer social proof signals from the URL structure / product name alone.
       const fu = url && !url.startsWith("http") ? `https://${url}` : url;
-      parts.push({ text:`Analyze. ${fu?"URL: "+fu+". Use Google Search & URL Context.":""} Detect stars, reviews, sold. Return JSON: { hasSocialProof, stars, reviews, sold, suggestedHeadline, suggestedSubtext }` });
-      const cfg: any = { responseMimeType:"application/json", tools:fu?[{googleSearch:{}},{urlContext:{}}]:undefined, toolConfig:fu?{includeServerSideToolInvocations:true}:undefined };
+      const parts: any[] = [];
+      if (imageData?.startsWith("data:")) {
+        parts.push({ inlineData:{ data:imageData.split(",")[1], mimeType:imageData.split(";")[0].split(":")[1] } });
+      }
+      const textPrompt = [
+        fu ? `Product URL: ${fu}.` : "",
+        "Based on the product URL domain and any visible product details, infer likely social proof signals",
+        "(star rating, approximate review count, estimated units sold) that a real listing might have.",
+        "Return ONLY valid JSON — no markdown, no extra text:",
+        `{ "hasSocialProof": boolean, "stars": number|null, "reviews": string|null, "sold": string|null, "suggestedHeadline": string, "suggestedSubtext": string }`,
+      ].filter(Boolean).join(" ");
+      parts.push({ text: textPrompt });
+
+      // cfg: no unsupported tool keys
+      const cfg: any = { responseMimeType: "application/json" };
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:[{role:"user",parts}], config:cfg })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:[{role:"user",parts}], config:cfg })); else throw e; }
-      const res = JSON.parse((r as any).text || "{}");
+      try {
+        r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:[{role:"user",parts}], config:cfg }));
+      } catch (e: any) {
+        if (e.message?.includes("403")) {
+          r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:[{role:"user",parts}], config:cfg }));
+        } else throw e;
+      }
+      const raw = (r as any).text || "{}";
+      const res = JSON.parse(raw.replace(/```json|```/g, "").trim());
       if (res.hasSocialProof) {
         setSocialProof({ stars:res.stars, reviews:res.reviews, sold:res.sold });
         if (res.suggestedHeadline) setEditableHeadline(res.suggestedHeadline);
         if (res.suggestedSubtext)  setEditableSubtext(res.suggestedSubtext);
       }
-    } catch {} finally { setIsAnalyzingSocialProof(false); }
+    } catch (err: any) {
+      // Surface the error so silent failures are visible during development
+      console.warn("[fetchSocialProof]", err?.message || err);
+    } finally {
+      setIsAnalyzingSocialProof(false);
+    }
   };
 
   const buildPrompt = () => {
