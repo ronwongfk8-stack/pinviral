@@ -441,7 +441,7 @@ export default function App() {
       return updated;
     });
 
-    showToast("success", `≡ƒÄë ${plan.emoji} ${planKey.charAt(0).toUpperCase()+planKey.slice(1)} plan activated!`);
+    showToast("success", ` ${plan.emoji} ${planKey.charAt(0).toUpperCase()+planKey.slice(1)} plan activated!`);
   };
 
   // ── Stripe Checkout ───────────────────────────────────────────────────────
@@ -462,6 +462,17 @@ export default function App() {
       if (!priceId) throw new Error(`Price ID for "${priceIdKey}" not found. Open Stripe setup to auto-create.`);
 
       const isSubscription = !topupKey;
+      // Save work state before redirect
+      try {
+        if (productAnalysis) localStorage.setItem("pinviral_work_analysis", JSON.stringify(productAnalysis));
+        if (uploadedImage) localStorage.setItem("pinviral_work_image", uploadedImage);
+        if (productUrl) localStorage.setItem("pinviral_work_url", productUrl);
+      } catch {}
+      try {
+        if (productAnalysis) localStorage.setItem("pinviral_work_analysis", JSON.stringify(productAnalysis));
+        if (uploadedImage) localStorage.setItem("pinviral_work_image", uploadedImage);
+        if (productUrl) localStorage.setItem("pinviral_work_url", productUrl);
+      } catch {}
       const base = window.location.href.split("?")[0];
       const successUrl = `${base}?session_id={CHECKOUT_SESSION_ID}&plan=${planKey}&billing=${billing}${topupKey ? `&topup=${topupKey}` : ""}`;
       const cancelUrl  = `${base}?canceled=1`;
