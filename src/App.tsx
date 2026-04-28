@@ -686,7 +686,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (session.imagesLeft <= 2 && session.imagesLeft > 0 && session.plan === "free") setShowUpgradeModal(true);
+    if (session.imagesLeft <= 0 && session.plan === "free") setShowUpgradeModal(true);
   }, [session.imagesLeft]);
 
   // ── Toast helper ──────────────────────────────────────────────────────────
