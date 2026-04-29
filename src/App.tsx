@@ -1951,7 +1951,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700":
               "bg-slate-50 border-slate-200 text-slate-500")}>
               <CreditCard size={15}/>
-              {stripeStatus==="live" ? "Stripe connected · Test mode" :
+              {stripeStatus==="live" ? `Stripe connected · ${stripe.secretKey?.startsWith("sk_live")||stripe.secretKey?.startsWith("rk_live")?"Live mode ✓":"Test mode"} · All prices ready` :
                stripeStatus==="partial" ? "Stripe keys found — prices needed" :
                <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
             </div>
@@ -2108,7 +2108,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
           className="bg-white rounded-[2rem] shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
           <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white sticky top-0 z-10">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">Test mode · Auto-reads from .env</p></div></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">{stripe.secretKey?.startsWith("sk_live") || stripe.secretKey?.startsWith("rk_live") ? "🟢 Live mode" : "🟡 Test mode"} · Auto-reads from .env</p></div></div>
               <button onClick={()=>setShowStripeSetup(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={17}/></button>
             </div>
           </div>
@@ -2747,8 +2747,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <div className="text-center max-w-3xl mx-auto mb-12">
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content — <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
-              {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys found — run auto-create to generate price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
-              {stripe.ready&&<div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl mb-6"><ShieldCheck size={14} className="text-emerald-600"/><p className="text-sm text-emerald-700 font-medium">Stripe connected · Test mode · All prices ready</p></div>}
+              {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys loaded — click to create price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
+              {stripe.ready&&<div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-2xl mb-6"><ShieldCheck size={14} className="text-emerald-600"/><p className="text-sm text-emerald-700 font-medium">Stripe connected · {stripe.secretKey?.startsWith("sk_live")||stripe.secretKey?.startsWith("rk_live")?"Live mode ✓":"Test mode"} · All prices ready</p></div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
 
