@@ -2202,13 +2202,14 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             </div>
 
             {/* Stripe status */}
+            {stripeStatus !== "live" && (
             <button onClick={()=>setShowStripeSetup(true)}
               className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                stripeStatus==="live"?"bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100":
                 stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
                 "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="live"?"Stripe ✓":stripeStatus==="partial"?"Stripe ⚠️":"Setup Stripe"}
+              <CreditCard size={12}/>{stripeStatus==="partial"?"Stripe ⚠️":"Setup Stripe"}
             </button>
+            )}
 
             {/* Account button */}
             <button onClick={()=>setShowAccountModal(true)}
