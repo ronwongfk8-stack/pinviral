@@ -598,6 +598,11 @@ export default function App() {
     if (merged.secretKey) setManualSk(merged.secretKey);
     if (merged.publishableKey) setManualPk(merged.publishableKey);
 
+    // ── Auto-create prices silently if keys present but prices missing ────────
+    if (merged.keysPresent && !merged.ready) {
+      setTimeout(() => autoCreatePrices(), 2000);
+    }
+
     // ── Handle Stripe redirect ────────────────────────────────────────────────
     const params  = new URLSearchParams(window.location.search);
     // Pinterest OAuth callback
