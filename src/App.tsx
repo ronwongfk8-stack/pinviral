@@ -600,7 +600,43 @@ export default function App() {
 
     // ── Auto-create prices silently if keys present but prices missing ────────
     if (merged.keysPresent && !merged.ready) {
-      setTimeout(() => autoCreatePrices(), 2000);
+      setTimeout(async () => {
+        // Use merged directly — avoids stale closure on stripe state
+        const sk = merged.secretKey;
+        if (!sk) return;
+        try {
+          const newIds: Record<string, string> = { ...merged.priceIds };
+          const plans = [
+            { key:"starter", name:"PinViral Starter", monthly:2900,  annual:24000  },
+            { key:"pro",     name:"PinViral Pro",     monthly:5900,  annual:49200  },
+            { key:"scale",   name:"PinViral Scale",   monthly:11900, annual:99600  },
+            { key:"agency",  name:"PinViral Agency",  monthly:19900, annual:166800 },
+          ];
+          for (const p of plans) {
+            const mk = `${p.key}_monthly`; const ak = `${p.key}_annual`;
+            if (newIds[mk] && newIds[ak]) continue;
+            const prod = await stripePost(sk, "products", { name: p.name, "metadata[plan]": p.key });
+            if (!newIds[mk]) { const mp = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month" }); newIds[mk]=mp.id; }
+            if (!newIds[ak]) { const ap = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year"  }); newIds[ak]=ap.id; }
+          }
+          const topups = [
+            { key:"topup_50img",    name:"PinViral Top-up: 50 Images",              amount:1200 },
+            { key:"topup_10vid",    name:"PinViral Top-up: 10 Videos",              amount:1900 },
+            { key:"topup_bundle_s", name:"PinViral Top-up: 50 Images + 5 Videos",   amount:2500 },
+            { key:"topup_bundle_m", name:"PinViral Top-up: 100 Images + 15 Videos", amount:4900 },
+            { key:"topup_bundle_l", name:"PinViral Top-up: 250 Images + 40 Videos", amount:9900 },
+          ];
+          for (const t of topups) {
+            if (newIds[t.key]) continue;
+            const prod = await stripePost(sk, "products", { name:t.name, "metadata[type]":"topup" });
+            const pr   = await stripePost(sk, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
+            newIds[t.key] = pr.id;
+          }
+          const ready = Object.keys(newIds).length >= 13;
+          setStripe(prev => ({ ...prev, priceIds: newIds as any, ready }));
+          try { localStorage.setItem("pinviral_prices", JSON.stringify(newIds)); } catch {}
+        } catch(e) { devlog.warn("[autoInit prices]", e); }
+      }, 1500);
     }
 
     // ── Handle Stripe redirect ────────────────────────────────────────────────
