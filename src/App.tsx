@@ -1024,10 +1024,27 @@ function AppInner() {
 
   // -- AI helpers ------------------------------------------------------------
 
-  const getAI = () => {
-    const k = "AIzaSyAM-WnRMbDzPcYDiMxyUCdDwFBT87L0dws";
-    return new GoogleGenAI({ apiKey: k });
-  };
+  const GEMINI_KEY = "AIzaSyAM-WnRMbDzPcYDiMxyUCdDwFBT87L0dws";
+
+const getAI = () => new GoogleGenAI({ apiKey: GEMINI_KEY });
+
+const geminiRest = async (prompt: string, config?: any): Promise<string> => {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: config?.responseMimeType === "application/json"
+          ? { responseMimeType: "application/json" } : undefined,
+      }),
+    }
+  );
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `Gemini error ${res.status}`);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+};
 
   // -- Clean URLs � strip tracking params, extract clean product URL ----------
   const cleanUrl = (raw: string): string => {
@@ -1121,16 +1138,14 @@ function AppInner() {
     finally { setIsScheduling(false); }
   };
 
-  const generateVariantB = async (primaryAngle: any, product: string, ai: any) => {
+  const generateVariantB = async (primaryAngle: any, product: string, _ai: any) => {
     if (!primaryAngle) return;
     try {
-      const prompt = `Pinterest viral expert. Product: "${product}". Primary angle: "${primaryAngle.title}" � ${primaryAngle.psychology}.
+      const prompt = `Pinterest viral expert. Product: "${product}". Primary angle: "${primaryAngle.title}" — ${primaryAngle.psychology}.
 Generate a SECOND completely different pin variant for A/B testing. Different hook, different emotional trigger.
 Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string }`;
-      let r: any;
-      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
-      catch { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
-      const v = JSON.parse((r as any).text||"{}");
+      const text = await withRetry(() => geminiRest(prompt, { responseMimeType: "application/json" }));
+      const v = JSON.parse(text || "{}");
       if (v.hook) setAbVariantB(v);
     } catch(e) { devlog.warn("[variantB]",e); }
   };
@@ -1139,7 +1154,6 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     if (!strategy || selectedAngleIndex === null) return;
     setIsRegenField(field);
     try {
-      const ai = getAI();
       const angle = strategy.angles[selectedAngleIndex];
       const currentVal = field==="headline" ? editableHeadline
         : field==="subtext"  ? editableSubtext
@@ -1152,10 +1166,8 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
       const prompt = "Pinterest copy expert. Product: \"" + productName + "\". Angle: \"" + angle.title + "\" � " + angle.psychology + ".\n"
         + "Regenerate ONLY the " + field + " field. Be creative and different from: \"" + currentVal + "\".\n"
         + "Return JSON only: { \"value\": " + returnSchema + " }";
-      let r: any;
-      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
-      catch { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
-      const parsed = JSON.parse((r as any).text||"{}");
+      const regenText = await withRetry(() => geminiRest(prompt, { responseMimeType: "application/json" }));
+      const parsed = JSON.parse(regenText || "{}");
       if (parsed.value) {
         if (field==="headline")     setEditableHeadline(parsed.value);
         if (field==="subtext")      setEditableSubtext(parsed.value);
@@ -1176,7 +1188,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     finally { setIsRegenField(null); }
   };
 
-  const enrichAngles = (leanAngles: any[], productNameStr: string, context: string, ai: any) => {
+  const enrichAngles = (leanAngles: any[], productNameStr: string, context: string, _ai: any) => {
     const step2Prompt = `Pinterest copy expert. Product: "${productNameStr}". ${context} For each of these 3 angles, return enriched copy. IMPORTANT RULES: (1) headlines must be exactly 5 short punchy variants. (2) pinDescription must be a rich SEO paragraph of at least 100 words � describe the product benefits, who it's for, the lifestyle it fits, and why it's worth buying. Do NOT write one sentence. (3) hashtags must be exactly 10 relevant tags including niche-specific ones. (4) altText must be a proper accessibility description of what would appear in the pin image � describe the product, its visual appearance, and the scene. NOT a URL, NOT just the product name. Angles: ${JSON.stringify(leanAngles.map((a: any)=>({title:a.title,psychology:a.psychology})))}`;
     const step2Schema = {
       responseMimeType: "application/json",
@@ -1204,10 +1216,8 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     };
     (async () => {
       try {
-        let r2: any;
-        try { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step2Prompt, config:step2Schema })); }
-        catch (e: any) { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step2Prompt, config:step2Schema })); }
-        const step2 = JSON.parse((r2 as any).text || "{}");
+        const enrichText = await withRetry(() => geminiRest(step2Prompt, { responseMimeType: "application/json" }));
+        const step2 = JSON.parse(enrichText || "{}");
         const enriched: any[] = step2.angles || [];
         if (enriched.length) {
           setStrategy(prev => {
@@ -1236,8 +1246,6 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     setSocialProof(null); setProductAnalysis(null);
     setSelectedEnvId(null); setVoiceoverScript(null);
     try {
-      const ai = getAI();
-
       // -- URL detection & resolution ----------------------------------------
       const inputText = productName.trim();
       // Extract URL if present in the textarea (could be just a URL, or URL + extra text)
@@ -1279,14 +1287,10 @@ Return ONLY a JSON object (no markdown fences):
   ]
 }`;
         try {
-          // Primary: urlContext lets Gemini actually browse the page
-          r1 = await withRetry(() => ai.models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: [{ role: "user", parts: [{ text: urlStep1Prompt }] }],
-            config: { tools: [{ urlContext: {} }] },   // NO responseMimeType � conflicts with urlContext
-          }));
+          // Primary: direct REST call (SDK URL routing broken in v1.51)
+          const urlR1 = await withRetry(() => geminiRest(urlStep1Prompt));
           // Parse product info out of the free-text response
-          const rawText = (r1 as any).text || "{}";
+          const rawText = urlR1 || "{}";
           const cleaned = rawText.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m =>
             m.replace(/```json|```/g, "").trim()
           );
@@ -1355,10 +1359,8 @@ Return ONLY a JSON object (no markdown fences):
         }
       };
 
-      let r1fallback: any;
-      try { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step1Prompt, config:step1Schema })); }
-      catch (e: any) { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step1Prompt, config:step1Schema })); }
-      const step1 = JSON.parse((r1fallback as any).text || "{}");
+      const step1Text = await withRetry(() => geminiRest(step1Prompt, { responseMimeType: "application/json" }));
+      const step1 = JSON.parse(step1Text || "{}");
       const leanAngles: any[] = step1.angles || [];
       if (!leanAngles.length) throw new Error("No angles returned. Please try again.");
 
@@ -1390,13 +1392,20 @@ Return ONLY a JSON object (no markdown fences):
   const analyzeProductImage = async (imageData: string) => {
     setIsAnalyzingProduct(true); setAnalysisError(null); setProductAnalysis(null); setSelectedEnvId(null); setShowCustomEnv(false);
     try {
-      const ai = getAI();
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
       const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] � unchanged � placed in [50-80 word scene]..." } ...5 total ] }`;
-      let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
-      const res = JSON.parse((r as any).text || "{}") as ProductAnalysis;
+      const imageAnalysisRes = await withRetry(() => fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ inlineData: { data: b64, mimeType: mime } }, { text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" },
+          }),
+        }
+      ).then(r => r.json()));
+      const res = JSON.parse(imageAnalysisRes.candidates?.[0]?.content?.parts?.[0]?.text || "{}") as ProductAnalysis;
       setProductAnalysis(res);
       if (res.environments?.length > 0) setSelectedEnvId(res.environments[0].id);
     } catch { setAnalysisError("Could not analyze product. Write a custom scene below."); setShowCustomEnv(true); }
@@ -1407,7 +1416,6 @@ Return ONLY a JSON object (no markdown fences):
     if (!imageData && !url) return;
     setIsAnalyzingSocialProof(true);
     try {
-      const ai = getAI();
       const fu = url && !url.startsWith("http") ? `https://${url}` : url;
       const parts: any[] = [];
       if (imageData?.startsWith("data:")) {
@@ -1422,16 +1430,12 @@ Return ONLY a JSON object (no markdown fences):
       ].filter(Boolean).join(" ");
       parts.push({ text: textPrompt });
 
-      const cfg: any = { responseMimeType: "application/json" };
-      let r: any;
-      try {
-        r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts}], config:cfg }));
-      } catch (e: any) {
-        if (e.message?.includes("403") || e.message?.includes("404") || e.message?.includes("NOT_FOUND")) {
-          r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts}], config:cfg }));
-        } else throw e;
-      }
-      const raw = (r as any).text || "{}";
+      const spBody: any = { contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } };
+      const spRes = await withRetry(() => fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spBody) }
+      ).then(r => r.json()));
+      const raw = spRes.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
       const res = JSON.parse(raw.replace(/```json|```/g, "").trim());
       if (res.hasSocialProof) {
         setSocialProof({ stars: res.stars, reviews: res.reviews, sold: res.sold });
@@ -1478,7 +1482,6 @@ Return ONLY a JSON object (no markdown fences):
 
   const fetchAmazonImages = async (fullUrl: string): Promise<string[]> => {
     try {
-      const ai = getAI();
       // Extract ASIN from URL as hint
       const asinMatch = fullUrl.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
       const asin = asinMatch ? (asinMatch[1] || asinMatch[2]) : null;
@@ -1490,12 +1493,8 @@ Look for the main product image and gallery thumbnails. Get the high-res version
 Return ONLY this JSON � no markdown:
 {"images":["https://m.media-amazon.com/images/I/XXXXX.jpg","..."]}`; 
 
-      const r = await withRetry(() => (ai as any).models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { tools: [{ urlContext: {} }] },
-      }));
-      const text = ((r as any).text || "").trim();
+      const amazonText = await withRetry(() => geminiRest(prompt));
+      const text = amazonText.trim();
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) return [];
       const parsed = JSON.parse(match[0]);
@@ -1510,18 +1509,13 @@ Return ONLY this JSON � no markdown:
 
   const fetchGeminiImages = async (fullUrl: string): Promise<string[]> => {
     try {
-      const ai = getAI();
       const prompt = `Visit this product page: "${fullUrl}"
 Extract the absolute URLs of the main product photos (not logos, icons, or UI graphics).
-Return ONLY this JSON � no markdown:
+Return ONLY this JSON — no markdown:
 {"images":["https://...","https://..."]}
 Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
-      const r = await withRetry(() => (ai as any).models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        config: { tools: [{ urlContext: {} }] },
-      }));
-      const text = ((r as any).text || "").trim();
+      const gemImgText = await withRetry(() => geminiRest(prompt));
+      const text = gemImgText.trim();
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) return [];
       const parsed = JSON.parse(match[0]);
