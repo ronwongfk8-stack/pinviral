@@ -1614,24 +1614,35 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
   };
 
   const generateImage = async () => {
-    if (!strategy && !uploadedImage) return;
-    if (session.imagesLeft <= 0) { setShowUpgradeModal(true); return; }
-    setIsGeneratingImage(true); setError(null);
-    try {
-      const ai = getAI(); const prompt = buildPrompt(); const parts: any[] = [];
-      if (uploadedImage?.startsWith("data:")) parts.push({ inlineData:{ data:uploadedImage.split(",")[1], mimeType:uploadedImage.split(";")[0].split(":")[1] } });
-      const kd = productAnalysis?.keyVisualDetails||""; const pd = productAnalysis?.productDescription||productName||"the product";
-      parts.push({ text: uploadedImage ? `Reference product image above. CRITICAL: Output product IDENTICAL — same color, shape, branding. ONLY change background/setting/lighting. ${kd?"Preserve: "+kd+".":""} Product: ${pd}. Scene: ${prompt}. Output: 2:3 ratio, professional Pinterest photography.` : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy&&selectedAngleIndex!==null?strategy.angles[selectedAngleIndex].psychology:"professional lifestyle photography"}.` });
-      let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash-exp", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3",imageSize:"1K"}} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash-exp", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3"}} })); else throw e; }
-      for (const p of r.candidates?.[0]?.content?.parts||[]) {
-        if (p.inlineData) { setGeneratedImage(`data:image/png;base64,${p.inlineData.data}`); consumeImage(); return; }
-      }
-      throw new Error("No image returned. Please try again.");
-    } catch (err: any) { handleApiError(err, "Failed to generate image."); }
-    finally { setIsGeneratingImage(false); }
-  };
+  if (!strategy && !uploadedImage) return;
+  if (session.imagesLeft <= 0) { setShowUpgradeModal(true); return; }
+  setIsGeneratingImage(true); setError(null);
+  try {
+    const ai = getAI();
+    const prompt = buildPrompt();
+    const pd = productAnalysis?.productDescription || productName || "the product";
+    const kd = productAnalysis?.keyVisualDetails || "";
+
+    const fullPrompt = uploadedImage
+      ? `Professional Pinterest product photo. Product: ${pd}. ${kd ? "Preserve: " + kd + "." : ""} Scene: ${prompt}. Style: clean, lifestyle, 2:3 ratio.`
+      : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy && selectedAngleIndex !== null ? strategy.angles[selectedAngleIndex].psychology : "professional lifestyle photography"}.`;
+
+    const r = await withRetry(() => ai.models.generateImages({
+      model: "imagen-3.0-generate-002",
+      prompt: fullPrompt,
+      config: { numberOfImages: 1, aspectRatio: "2:3" },
+    }));
+
+    const imgBytes = r.images?.[0]?.imageBytes;
+    if (imgBytes) {
+      setGeneratedImage(`data:image/png;base64,${imgBytes}`);
+      consumeImage();
+      return;
+    }
+    throw new Error("No image returned. Please try again.");
+  } catch (err: any) { handleApiError(err, "Failed to generate image."); }
+  finally { setIsGeneratingImage(false); }
+};
 
   const generateVoiceover = async () => {
     if (!strategy || selectedAngleIndex===null) return;
