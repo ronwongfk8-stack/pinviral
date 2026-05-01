@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Privacy Policy – PinViral AI</title>
+  <meta name="description" content="PinViral AI Privacy Policy. Learn how we collect, use, and protect your data."/>
+  <link rel="canonical" href="https://pinviral.com/privacy"/>
+  <meta name="robots" content="index, follow"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      line-height: 1.7;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo {
+      width: 32px; height: 32px;
+      background: #e11d48;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo svg { width: 16px; height: 16px; fill: white; }
+    .logo-text { font-weight: 900; font-size: 18px; color: #0f172a; }
+    header a {
+      margin-left: auto;
+      font-size: 13px;
+      color: #e11d48;
+      text-decoration: none;
+      font-weight: 700;
+    }
+    header a:hover { text-decoration: underline; }
+    main {
+      max-width: 760px;
+      margin: 48px auto;
+      padding: 0 24px 80px;
+    }
+    .badge {
+      display: inline-block;
+      background: #fef2f2;
+      color: #e11d48;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid #fecdd3;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 36px;
+      font-weight: 900;
+      color: #0f172a;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+    .meta {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-bottom: 40px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .meta span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .summary-box {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #e11d48;
+      border-radius: 16px;
+      padding: 20px 24px;
+      margin-bottom: 40px;
+    }
+    .summary-box h2 {
+      font-size: 14px;
+      font-weight: 800;
+      color: #e11d48;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+    .summary-box ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .summary-box ul li {
+      font-size: 14px;
+      color: #475569;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .summary-box ul li::before {
+      content: "✓";
+      color: #22c55e;
+      font-weight: 900;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 20px;
+      padding: 28px 32px;
+      margin-bottom: 16px;
+    }
+    section h2 {
+      font-size: 18px;
+      font-weight: 900;
+      color: #0f172a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    section h2 .num {
+      width: 28px; height: 28px;
+      background: #f1f5f9;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 900;
+      color: #64748b;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    section p {
+      font-size: 15px;
+      color: #475569;
+      margin-bottom: 12px;
+    }
+    section p:last-child { margin-bottom: 0; }
+    section ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    section ul li {
+      font-size: 14px;
+      color: #475569;
+      padding-left: 20px;
+      position: relative;
+    }
+    section ul li::before {
+      content: "·";
+      position: absolute;
+      left: 6px;
+      color: #e11d48;
+      font-weight: 900;
+    }
+    .highlight {
+      background: #fef2f2;
+      border: 1px solid #fecdd3;
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-size: 14px;
+      color: #9f1239;
+      margin-top: 12px;
+    }
+    .subprocessor-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    .subprocessor-table th {
+      text-align: left;
+      font-size: 10px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .subprocessor-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #f1f5f9;
+      color: #475569;
+      vertical-align: top;
+    }
+    .subprocessor-table tr:last-child td { border-bottom: none; }
+    a { color: #e11d48; }
+    a:hover { text-decoration: underline; }
+    .rights-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .right-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+    .right-card strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .right-card span {
+      font-size: 12px;
+      color: #64748b;
+    }
+    footer {
+      text-align: center;
+      padding: 40px 24px;
+      font-size: 13px;
+      color: #94a3b8;
+    }
+    footer a { color: #e11d48; text-decoration: none; font-weight: 600; }
+    footer nav { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+    @media (max-width: 600px) {
+      h1 { font-size: 26px; }
+      section { padding: 20px 18px; }
+      .rights-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <span class="logo-text">PinViral</span>
+    <a href="https://pinviral.com">← Back to App</a>
+  </header>
+
+  <main>
+    <div class="badge">Legal · Privacy</div>
+    <h1>Privacy Policy</h1>
+    <div class="meta">
+      <span>📅 Last updated: January 2026</span>
+      <span>🌍 GDPR &amp; CCPA Compliant</span>
+      <span>✉️ privacy@pinviral.com</span>
+    </div>
+
+    <div class="summary-box">
+      <h2>Plain English Summary</h2>
+      <ul>
+        <li>We don't sell your data to anyone, ever</li>
+        <li>Product images you upload are processed by Google Gemini AI — not stored by us</li>
+        <li>We use browser fingerprinting only to enforce the 1-device free trial limit</li>
+        <li>Payments are handled entirely by Stripe — we never see your card number</li>
+        <li>You can export or delete all your data at any time from Account Settings</li>
+        <li>We use no third-party tracking or advertising cookies</li>
+      </ul>
+    </div>
+
+    <section>
+      <h2><span class="num">1</span> Who We Are</h2>
+      <p>PinViral AI ("PinViral", "we", "us", "our") is an AI-powered Pinterest marketing platform. Our service is accessible at <a href="https://pinviral.com">pinviral.com</a>.</p>
+      <p>For privacy enquiries contact: <a href="mailto:privacy@pinviral.com">privacy@pinviral.com</a></p>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span> Data We Collect</h2>
+      <p>We collect only what is necessary to provide the service:</p>
+      <ul>
+        <li><strong>Email address</strong> — collected when you subscribe to a paid plan via Stripe</li>
+        <li><strong>Product images</strong> — uploaded by you to generate AI pin visuals. Sent to Google Gemini API for processing and not stored on our servers</li>
+        <li><strong>Browser fingerprint</strong> — a hash derived from canvas rendering, AudioContext output, and navigator properties. Stored in your browser (localStorage + IndexedDB) to enforce the one-device free trial policy</li>
+        <li><strong>Usage data</strong> — images generated, plan type, credits used. Stored locally in your browser</li>
+        <li><strong>Payment data</strong> — processed entirely by Stripe. We receive only a customer ID and subscription status — never your card details</li>
+        <li><strong>Pinterest OAuth token</strong> — if you connect Pinterest, your access token is stored locally in your browser and used only to publish pins on your behalf</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span> How We Use Your Data</h2>
+      <ul>
+        <li>To provide and operate the PinViral service</li>
+        <li>To enforce free-plan limits via browser fingerprinting</li>
+        <li>To process payments and manage your subscription via Stripe</li>
+        <li>To generate AI images and marketing copy via Google Gemini API</li>
+        <li>To publish pins to Pinterest on your behalf (only when you connect your account)</li>
+        <li>To send transactional emails (receipts, plan changes) — no marketing emails without your consent</li>
+      </ul>
+      <p>We do <strong>not</strong> use your data for advertising, profiling, or sell it to any third party.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">4</span> Browser Fingerprinting</h2>
+      <p>To enforce our one-device free trial policy, we generate a browser fingerprint using:</p>
+      <ul>
+        <li>Canvas API rendering hash</li>
+        <li>AudioContext floating-point output</li>
+        <li>Screen resolution, color depth, timezone, and platform</li>
+        <li>Navigator hardware concurrency and device memory</li>
+      </ul>
+      <p>This fingerprint is stored in your browser's <code>localStorage</code> and <code>IndexedDB</code> only. It is never transmitted to our servers or shared with third parties.</p>
+      <div class="highlight">By using PinViral you consent to this fingerprinting as described in our cookie consent banner.</div>
+    </section>
+
+    <section>
+      <h2><span class="num">5</span> Subprocessors</h2>
+      <p>We use the following third-party services to operate PinViral:</p>
+      <table class="subprocessor-table">
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>Purpose</th>
+            <th>Data Sent</th>
+            <th>Their Privacy Policy</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Google Gemini API</strong></td>
+            <td>AI image generation, strategy text, URL analysis</td>
+            <td>Product images, product URLs, text prompts</td>
+            <td><a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank">Google DPA</a></td>
+          </tr>
+          <tr>
+            <td><strong>Stripe</strong></td>
+            <td>Payment processing, subscriptions</td>
+            <td>Email, billing details</td>
+            <td><a href="https://stripe.com/privacy" target="_blank">Stripe Privacy</a></td>
+          </tr>
+          <tr>
+            <td><strong>Pinterest API</strong></td>
+            <td>Publishing pins (only when you connect)</td>
+            <td>Pin image, title, description, board selection</td>
+            <td><a href="https://policy.pinterest.com/privacy-policy" target="_blank">Pinterest Privacy</a></td>
+          </tr>
+          <tr>
+            <td><strong>corsproxy.io / allorigins.win</strong></td>
+            <td>Fetching product page images from URLs</td>
+            <td>The product page URL you enter</td>
+            <td>No personal data transmitted</td>
+          </tr>
+          <tr>
+            <td><strong>images.weserv.nl</strong></td>
+            <td>Image proxy for displaying product images</td>
+            <td>Product image URLs</td>
+            <td>No personal data transmitted</td>
+          </tr>
+          <tr>
+            <td><strong>Vercel</strong></td>
+            <td>Hosting and deployment</td>
+            <td>Standard web server logs (IP, user agent)</td>
+            <td><a href="https://vercel.com/legal/privacy-policy" target="_blank">Vercel Privacy</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2><span class="num">6</span> Cookies &amp; Local Storage</h2>
+      <p>PinViral does <strong>not</strong> use third-party tracking or advertising cookies.</p>
+      <p>We use your browser's local storage and IndexedDB to store:</p>
+      <ul>
+        <li>Your session data (plan, credits remaining)</li>
+        <li>Browser fingerprint (free trial enforcement)</li>
+        <li>Stripe keys you manually enter (never transmitted to our servers)</li>
+        <li>Pinterest access token (if you connect Pinterest)</li>
+        <li>Your cookie consent preference</li>
+      </ul>
+      <p>You can clear this data at any time using <strong>Account Settings → Delete Account & Data</strong> or by clearing your browser's site data.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">7</span> Data Retention</h2>
+      <p>All session data is stored locally in your browser. PinViral does not maintain a cloud database of user content. Stripe retains billing records as required by financial regulations (typically 7 years). Google Gemini processes images transiently — refer to <a href="https://cloud.google.com/terms/data-processing-addendum" target="_blank">Google's DPA</a> for their retention policy.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">8</span> Your Rights (GDPR &amp; CCPA)</h2>
+      <p>Depending on your location, you have the following rights:</p>
+      <div class="rights-grid">
+        <div class="right-card">
+          <strong>Access</strong>
+          <span>Request a copy of data we hold about you</span>
+        </div>
+        <div class="right-card">
+          <strong>Rectification</strong>
+          <span>Correct inaccurate personal data</span>
+        </div>
+        <div class="right-card">
+          <strong>Erasure</strong>
+          <span>Delete your account and all associated data</span>
+        </div>
+        <div class="right-card">
+          <strong>Portability</strong>
+          <span>Export your data as JSON from Account Settings</span>
+        </div>
+        <div class="right-card">
+          <strong>Withdraw Consent</strong>
+          <span>Opt out of fingerprinting by not using the free trial</span>
+        </div>
+        <div class="right-card">
+          <strong>Opt-out of Sale</strong>
+          <span>We never sell data — this right is already fulfilled</span>
+        </div>
+      </div>
+      <p style="margin-top:16px;">To exercise any right email <a href="mailto:privacy@pinviral.com">privacy@pinviral.com</a>. We respond within 30 days. For immediate data deletion use <strong>Account Settings → Delete Account & Data</strong>.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">9</span> Children's Privacy</h2>
+      <p>PinViral is not directed at children under 13 (or 16 in the EU). We do not knowingly collect data from minors. If you believe a child has provided us with data please contact <a href="mailto:privacy@pinviral.com">privacy@pinviral.com</a>.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">10</span> Changes to This Policy</h2>
+      <p>We may update this Privacy Policy from time to time. Material changes will be notified via in-app notification or email (if we have your email on file) with at least 14 days notice. Continued use of PinViral after the effective date constitutes acceptance of the updated policy.</p>
+      <p>The current version is always available at <a href="https://pinviral.com/privacy">pinviral.com/privacy</a>.</p>
+    </section>
+
+    <section>
+      <h2><span class="num">11</span> Contact &amp; Complaints</h2>
+      <p>For privacy questions: <a href="mailto:privacy@pinviral.com">privacy@pinviral.com</a></p>
+      <p>If you are in the EU and unsatisfied with our response you have the right to lodge a complaint with your local Data Protection Authority.</p>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>© 2026 PinViral AI · All rights reserved</p>
+    <nav>
+      <a href="https://pinviral.com">Home</a>
+      <a href="https://pinviral.com/terms">Terms of Service</a>
+      <a href="https://pinviral.com/privacy">Privacy Policy</a>
+      <a href="https://pinviral.com/refunds">Refund Policy</a>
+    </nav>
+  </footer>
+
+</body>
+</html>
