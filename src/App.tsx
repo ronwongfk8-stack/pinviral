@@ -1133,7 +1133,7 @@ function AppInner() {
 Generate a SECOND completely different pin variant for A/B testing. Different hook, different emotional trigger.
 Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string }`;
       let r: any;
-      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-2.0-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
+      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
       catch { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
       const v = JSON.parse((r as any).text||"{}");
       if (v.hook) setAbVariantB(v);
@@ -1158,7 +1158,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
         + "Regenerate ONLY the " + field + " field. Be creative and different from: \"" + currentVal + "\".\n"
         + "Return JSON only: { \"value\": " + returnSchema + " }";
       let r: any;
-      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-2.0-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
+      try { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
       catch { r = await withRetry(()=>(ai as any).models.generateContent({model:"gemini-1.5-flash",contents:prompt,config:{responseMimeType:"application/json"}})); }
       const parsed = JSON.parse((r as any).text||"{}");
       if (parsed.value) {
@@ -1210,7 +1210,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     (async () => {
       try {
         let r2: any;
-        try { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:step2Prompt, config:step2Schema })); }
+        try { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step2Prompt, config:step2Schema })); }
         catch (e: any) { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step2Prompt, config:step2Schema })); }
         const step2 = JSON.parse((r2 as any).text || "{}");
         const enriched: any[] = step2.angles || [];
@@ -1286,7 +1286,7 @@ Return ONLY a JSON object (no markdown fences):
         try {
           // Primary: urlContext lets Gemini actually browse the page
           r1 = await withRetry(() => ai.models.generateContent({
-            model: "gemini-2.0-flash",
+            model: "gemini-1.5-flash",
             contents: [{ role: "user", parts: [{ text: urlStep1Prompt }] }],
             config: { tools: [{ urlContext: {} }] },   // NO responseMimeType — conflicts with urlContext
           }));
@@ -1361,7 +1361,7 @@ Return ONLY a JSON object (no markdown fences):
       };
 
       let r1fallback: any;
-      try { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:step1Prompt, config:step1Schema })); }
+      try { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step1Prompt, config:step1Schema })); }
       catch (e: any) { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step1Prompt, config:step1Schema })); }
       const step1 = JSON.parse((r1fallback as any).text || "{}");
       const leanAngles: any[] = step1.angles || [];
@@ -1399,7 +1399,7 @@ Return ONLY a JSON object (no markdown fences):
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
       const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] — unchanged — placed in [50-80 word scene]..." } ...5 total ] }`;
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
+      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
       catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
       const res = JSON.parse((r as any).text || "{}") as ProductAnalysis;
       setProductAnalysis(res);
@@ -1430,7 +1430,7 @@ Return ONLY a JSON object (no markdown fences):
       const cfg: any = { responseMimeType: "application/json" };
       let r: any;
       try {
-        r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:[{role:"user",parts}], config:cfg }));
+        r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts}], config:cfg }));
       } catch (e: any) {
         if (e.message?.includes("403") || e.message?.includes("404") || e.message?.includes("NOT_FOUND")) {
           r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts}], config:cfg }));
@@ -1496,7 +1496,7 @@ Return ONLY this JSON — no markdown:
 {"images":["https://m.media-amazon.com/images/I/XXXXX.jpg","..."]}`; 
 
       const r = await withRetry(() => (ai as any).models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { tools: [{ urlContext: {} }] },
       }));
@@ -1522,7 +1522,7 @@ Return ONLY this JSON — no markdown:
 {"images":["https://...","https://..."]}
 Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const r = await withRetry(() => (ai as any).models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: { tools: [{ urlContext: {} }] },
       }));
@@ -1623,8 +1623,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const kd = productAnalysis?.keyVisualDetails||""; const pd = productAnalysis?.productDescription||productName||"the product";
       parts.push({ text: uploadedImage ? `Reference product image above. CRITICAL: Output product IDENTICAL — same color, shape, branding. ONLY change background/setting/lighting. ${kd?"Preserve: "+kd+".":""} Product: ${pd}. Scene: ${prompt}. Output: 2:3 ratio, professional Pinterest photography.` : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy&&selectedAngleIndex!==null?strategy.angles[selectedAngleIndex].psychology:"professional lifestyle photography"}.` });
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3.1-flash-image-preview", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3",imageSize:"1K"}} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.5-flash-image", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3"}} })); else throw e; }
+      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash-exp", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3",imageSize:"1K"}} })); }
+      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash-exp", contents:{parts}, config:{imageConfig:{aspectRatio:"2:3"}} })); else throw e; }
       for (const p of r.candidates?.[0]?.content?.parts||[]) {
         if (p.inlineData) { setGeneratedImage(`data:image/png;base64,${p.inlineData.data}`); consumeImage(); return; }
       }
@@ -1640,7 +1640,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const ai = getAI(); const angle = strategy.angles[selectedAngleIndex];
       const prompt = `${selectedVoiceTone.toUpperCase()} Pinterest video voiceover (15-30 sec). Product: ${productName}. Angle: ${angle.title}. Psychology: ${angle.psychology}. Headline: ${editableHeadline}. Benefit: ${editableSubtext}. CTA: ${editableCTA}. ${socialProof?.stars?"Stars: "+socialProof.stars:""} Return JSON: { "tone":"${selectedVoiceTone}", "duration":"est read time", "script":"full script with \\n breaks and (pause) markers, 40-80 words", "hooks":["3 alternative opening lines"] }`;
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:prompt, config:{responseMimeType:"application/json"} })); }
+      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:prompt, config:{responseMimeType:"application/json"} })); }
       catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:prompt, config:{responseMimeType:"application/json"} })); else throw e; }
       setVoiceoverScript(JSON.parse((r as any).text||"{}"));
       setVoiceoverExpanded(true);
