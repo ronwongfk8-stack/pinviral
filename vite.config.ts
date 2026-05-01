@@ -1,25 +1,12 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import { defineConfig, loadEnv } from 'vite'
+import react from '@vitejs/plugin-react'
 
-export default defineConfig({
-  plugins: [react()],
-  // Expose all VITE_ prefixed vars to the client automatically.
-  // No need for define â€” import.meta.env handles it natively.
-  build: {
-    outDir: "dist",
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          react: ["react", "react-dom"],
-          motion: ["motion"],
-          icons: ["lucide-react"],
-        },
-      },
-    },
-  },
-  server: {
-    port: 3000,
-    open: true,
-  },
-});
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  return {
+    plugins: [react()],
+    define: {
+      'import.meta.env.VITE_API_KEY': JSON.stringify(env.VITE_API_KEY || env.API_KEY || ''),
+    }
+  }
+})
