@@ -5,7 +5,7 @@
  * -- .env variables expected ------------------------------------------------
  *  STRIPE_SECRET_KEY=sk_test_...
  *  STRIPE_PUBLISHABLE_KEY=pk_test_...
- *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional — auto-created if absent)
+ *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional ï¿½ auto-created if absent)
  *  STRIPE_PRICE_STARTER_ANNUAL=price_...
  *  STRIPE_PRICE_PRO_MONTHLY=price_...
  *  STRIPE_PRICE_PRO_ANNUAL=price_...
@@ -191,7 +191,7 @@ const BASE_REALISTIC_MOTION = "Create subtle, realistic motion: slight camera zo
 const SESSION_KEY   = "pinviral_session_v2";
 const STRIPE_SK_KEY = "pinviral_stripe_sk";
 const STRIPE_PX_KEY = "pinviral_stripe_px";
-// Abuse-prevention keys — deliberately obscured names
+// Abuse-prevention keys ï¿½ deliberately obscured names
 const FP_KEY        = "_pv_fp";           // fingerprint id
 const FP_USED_KEY   = "_pv_fpu";          // fingerprint ? free-used flag
 const EMAIL_SET_KEY = "_pv_eu";           // set of emails that used free
@@ -564,7 +564,7 @@ function AppInner() {
               const sub = await r.json();
               const activeStatuses = ["active", "trialing"];
               if (!activeStatuses.includes(sub.status)) {
-                // Subscription cancelled / past_due — downgrade to free
+                // Subscription cancelled / past_due ï¿½ downgrade to free
                 s = {
                   ...defaultSession(),
                   email: s.email,
@@ -574,7 +574,7 @@ function AppInner() {
                 showToast("error", `Your ${s.plan} plan is no longer active (${sub.status}). Downgraded to free.`);
               }
             }
-          } catch { /* network error — keep current session, don't penalise */ }
+          } catch { /* network error ï¿½ keep current session, don't penalise */ }
         }
       }
 
@@ -582,7 +582,7 @@ function AppInner() {
       if (s.plan === "free") {
         const { blocked, reason } = await isFreePlanBlocked(s.email);
         if (blocked) {
-          // They've used their free trial on this device/email — zero out images
+          // They've used their free trial on this device/email ï¿½ zero out images
           s = { ...s, imagesLeft: 0, videosLeft: 0 };
           // Trigger upgrade modal after render
           setTimeout(() => {
@@ -592,7 +592,7 @@ function AppInner() {
               : "Free trial already used on this device. Upgrade to continue.");
           }, 800);
         } else if (s.imagesLeft < (PLAN_DEFS.free?.images ?? 2)) {
-          // They've consumed some free images — mark the trial as started
+          // They've consumed some free images ï¿½ mark the trial as started
           await markFreeTrialUsed(s.email);
         }
       }
@@ -623,7 +623,7 @@ function AppInner() {
     // -- Auto-create prices silently if keys present but prices missing --------
     if (merged.keysPresent && !merged.ready) {
       setTimeout(async () => {
-        // Use merged directly — avoids stale closure on stripe state
+        // Use merged directly ï¿½ avoids stale closure on stripe state
         const sk = merged.secretKey;
         if (!sk) return;
         try {
@@ -765,7 +765,7 @@ function AppInner() {
 
     // -- Top-up path -------------------------------------------------------
     // topupKey is present when the user bought a credit pack (not a plan upgrade).
-    // planKey will be "topup" in this case — it is NOT in PLAN_DEFS intentionally.
+    // planKey will be "topup" in this case ï¿½ it is NOT in PLAN_DEFS intentionally.
     if (topupKey) {
       const pack = TOPUP_PACKS.find(p => p.key === topupKey);
       if (!pack) { showToast("error", "Top-up pack not recognised. Contact support."); return; }
@@ -841,7 +841,7 @@ function AppInner() {
       lines: [
         `${plan.images.toLocaleString()} image credits/month`,
         `${plan.videos} video credits/month`,
-        billing === "annual" ? "Billed annually — 30% saved ??" : "Monthly billing active.",
+        billing === "annual" ? "Billed annually ï¿½ 30% saved ??" : "Monthly billing active.",
       ],
     });
     setTimeout(() => setActivationToast(null), 7000);
@@ -976,7 +976,7 @@ function AppInner() {
       for (const p of plans) {
         const mk = `${p.key}_monthly` as keyof StripePriceIds;
         const ak = `${p.key}_annual`  as keyof StripePriceIds;
-        if (newIds[mk] && newIds[ak]) { log(`? ${p.name} — already in .env`); continue; }
+        if (newIds[mk] && newIds[ak]) { log(`? ${p.name} ï¿½ already in .env`); continue; }
         log(`Creating ${p.name}...`);
         const prod = await stripePost(stripe.secretKey, "products", { name: p.name, "metadata[plan]": p.key });
         if (!newIds[mk]) { const mp = await stripePost(stripe.secretKey, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month", "metadata[plan]":p.key }); (newIds as any)[mk]=mp.id; log(`  ? Monthly: ${mp.id}`); }
@@ -994,7 +994,7 @@ function AppInner() {
       log("Creating top-up packs...");
       for (const t of topups) {
         const tk = t.key as keyof StripePriceIds;
-        if (newIds[tk]) { log(`  ? ${t.name} — already in .env`); continue; }
+        if (newIds[tk]) { log(`  ? ${t.name} ï¿½ already in .env`); continue; }
         const prod = await stripePost(stripe.secretKey, "products", { name:t.name, "metadata[type]":"topup" });
         const pr   = await stripePost(stripe.secretKey, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
         (newIds as any)[tk] = pr.id;
@@ -1025,16 +1025,11 @@ function AppInner() {
   // -- AI helpers ------------------------------------------------------------
 
   const getAI = () => {
-    // Directly read the key — covers all naming conventions
-    const vite = (typeof import.meta !== "undefined" && (import.meta as any).env)
-      ? (import.meta as any).env as Record<string, string> : {};
-    const k = vite["VITE_API_KEY"] || vite["VITE_GEMINI_API_KEY"] ||
-              (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_KEY) || readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
-    if (!k) throw new Error("API_KEY_MISSING");
+    const k = "AIzaSyAM-WnRMbDzPcYDiMxyUCdDwFBT87L0dws";
     return new GoogleGenAI({ apiKey: k });
   };
 
-  // -- Clean URLs — strip tracking params, extract clean product URL ----------
+  // -- Clean URLs ï¿½ strip tracking params, extract clean product URL ----------
   const cleanUrl = (raw: string): string => {
     try {
       const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
@@ -1129,7 +1124,7 @@ function AppInner() {
   const generateVariantB = async (primaryAngle: any, product: string, ai: any) => {
     if (!primaryAngle) return;
     try {
-      const prompt = `Pinterest viral expert. Product: "${product}". Primary angle: "${primaryAngle.title}" — ${primaryAngle.psychology}.
+      const prompt = `Pinterest viral expert. Product: "${product}". Primary angle: "${primaryAngle.title}" ï¿½ ${primaryAngle.psychology}.
 Generate a SECOND completely different pin variant for A/B testing. Different hook, different emotional trigger.
 Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string }`;
       let r: any;
@@ -1154,7 +1149,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
       const returnSchema = field === "hashtags"
         ? '["#tag1","#tag2","#tag3","#tag4","#tag5","#tag6","#tag7","#tag8","#tag9","#tag10"]'
         : '"string"';
-      const prompt = "Pinterest copy expert. Product: \"" + productName + "\". Angle: \"" + angle.title + "\" — " + angle.psychology + ".\n"
+      const prompt = "Pinterest copy expert. Product: \"" + productName + "\". Angle: \"" + angle.title + "\" ï¿½ " + angle.psychology + ".\n"
         + "Regenerate ONLY the " + field + " field. Be creative and different from: \"" + currentVal + "\".\n"
         + "Return JSON only: { \"value\": " + returnSchema + " }";
       let r: any;
@@ -1182,7 +1177,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
   };
 
   const enrichAngles = (leanAngles: any[], productNameStr: string, context: string, ai: any) => {
-    const step2Prompt = `Pinterest copy expert. Product: "${productNameStr}". ${context} For each of these 3 angles, return enriched copy. IMPORTANT RULES: (1) headlines must be exactly 5 short punchy variants. (2) pinDescription must be a rich SEO paragraph of at least 100 words — describe the product benefits, who it's for, the lifestyle it fits, and why it's worth buying. Do NOT write one sentence. (3) hashtags must be exactly 10 relevant tags including niche-specific ones. (4) altText must be a proper accessibility description of what would appear in the pin image — describe the product, its visual appearance, and the scene. NOT a URL, NOT just the product name. Angles: ${JSON.stringify(leanAngles.map((a: any)=>({title:a.title,psychology:a.psychology})))}`;
+    const step2Prompt = `Pinterest copy expert. Product: "${productNameStr}". ${context} For each of these 3 angles, return enriched copy. IMPORTANT RULES: (1) headlines must be exactly 5 short punchy variants. (2) pinDescription must be a rich SEO paragraph of at least 100 words ï¿½ describe the product benefits, who it's for, the lifestyle it fits, and why it's worth buying. Do NOT write one sentence. (3) hashtags must be exactly 10 relevant tags including niche-specific ones. (4) altText must be a proper accessibility description of what would appear in the pin image ï¿½ describe the product, its visual appearance, and the scene. NOT a URL, NOT just the product name. Angles: ${JSON.stringify(leanAngles.map((a: any)=>({title:a.title,psychology:a.psychology})))}`;
     const step2Schema = {
       responseMimeType: "application/json",
       responseSchema: {
@@ -1288,7 +1283,7 @@ Return ONLY a JSON object (no markdown fences):
           r1 = await withRetry(() => ai.models.generateContent({
             model: "gemini-1.5-flash",
             contents: [{ role: "user", parts: [{ text: urlStep1Prompt }] }],
-            config: { tools: [{ urlContext: {} }] },   // NO responseMimeType — conflicts with urlContext
+            config: { tools: [{ urlContext: {} }] },   // NO responseMimeType ï¿½ conflicts with urlContext
           }));
           // Parse product info out of the free-text response
           const rawText = (r1 as any).text || "{}";
@@ -1309,16 +1304,16 @@ Return ONLY a JSON object (no markdown fences):
                 ...a,
                 headlines: [
                   a.hook,
-                  `${a.title} — Try it today`,
+                  `${a.title} ï¿½ Try it today`,
                   `Why everyone loves this ${resolvedProductName}`,
                   `The secret to ${a.title.toLowerCase()}`,
-                  `${resolvedProductName} — See the difference`,
+                  `${resolvedProductName} ï¿½ See the difference`,
                 ],
                 subtext: [a.psychology],
                 cta: "Shop Now ?",
                 pinDescription: `${a.hook} ${a.psychology} Perfect for anyone looking to elevate their lifestyle. Discover why thousands of people love this product and how it can transform your everyday routine.`,
                 hashtags: ["#pinterest","#viral","#lifestyle","#trending","#musthave","#aesthetic","#shopnow","#productreview","#fyp","#inspo"],
-                altText: `${resolvedProductName} — ${a.title}. ${a.psychology}`,
+                altText: `${resolvedProductName} ï¿½ ${a.title}. ${a.psychology}`,
               }));
               setStrategy({ angles: enrichedLean });
               selectAngle(0, enrichedLean[0]);
@@ -1372,16 +1367,16 @@ Return ONLY a JSON object (no markdown fences):
         ...a,
         headlines: [
           a.hook,
-          `${a.title} — Try it today`,
+          `${a.title} ï¿½ Try it today`,
           `Why everyone loves this ${resolvedProductName}`,
           `The secret to ${a.title.toLowerCase()}`,
-          `${resolvedProductName} — See the difference`,
+          `${resolvedProductName} ï¿½ See the difference`,
         ],
         subtext: [a.psychology],
         cta: "Shop Now ?",
         pinDescription: `${a.hook} ${a.psychology} Perfect for anyone looking to elevate their lifestyle. Discover why thousands of people love this product and how it can transform your everyday routine.`,
         hashtags: ["#pinterest","#viral","#lifestyle","#trending","#musthave","#aesthetic","#shopnow","#productreview","#fyp","#inspo"],
-        altText: `${resolvedProductName} — ${a.title}. ${a.psychology}`,
+        altText: `${resolvedProductName} ï¿½ ${a.title}. ${a.psychology}`,
       })) });
       selectAngle(0, leanAngles[0]);
 
@@ -1397,7 +1392,7 @@ Return ONLY a JSON object (no markdown fences):
     try {
       const ai = getAI();
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
-      const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] — unchanged — placed in [50-80 word scene]..." } ...5 total ] }`;
+      const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] ï¿½ unchanged ï¿½ placed in [50-80 word scene]..." } ...5 total ] }`;
       let r: any;
       try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
       catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
@@ -1492,7 +1487,7 @@ Return ONLY a JSON object (no markdown fences):
 ${asin ? `The product ASIN is ${asin}.` : ""}
 Find ALL product image URLs on this page. Amazon images are on m.media-amazon.com or images-amazon.com CDNs.
 Look for the main product image and gallery thumbnails. Get the high-res versions (look for _SL1500_ or _AC_SL1500_ or remove size suffixes).
-Return ONLY this JSON — no markdown:
+Return ONLY this JSON ï¿½ no markdown:
 {"images":["https://m.media-amazon.com/images/I/XXXXX.jpg","..."]}`; 
 
       const r = await withRetry(() => (ai as any).models.generateContent({
@@ -1518,7 +1513,7 @@ Return ONLY this JSON — no markdown:
       const ai = getAI();
       const prompt = `Visit this product page: "${fullUrl}"
 Extract the absolute URLs of the main product photos (not logos, icons, or UI graphics).
-Return ONLY this JSON — no markdown:
+Return ONLY this JSON ï¿½ no markdown:
 {"images":["https://...","https://..."]}
 Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const r = await withRetry(() => (ai as any).models.generateContent({
@@ -1661,7 +1656,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
     const src = generatedImage||uploadedImage; if (!src) return;
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
-    // Resolve API key — prefer .env, fall back to aistudio dialog
+    // Resolve API key ï¿½ prefer .env, fall back to aistudio dialog
     const apiKey = (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_KEY) || (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_GEMINI_API_KEY) || readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
     if (!apiKey) {
       // Only open the aistudio key picker if there is truly no key anywhere
@@ -1703,9 +1698,9 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const customDir = animationPrompt?.trim();
 
       const fp = [
-        `PRODUCT VIDEO PIN — The product shown in the reference image is "${pd}".`,
+        `PRODUCT VIDEO PIN ï¿½ The product shown in the reference image is "${pd}".`,
         kd ? `Key visual details to preserve exactly: ${kd}.` : "",
-        "CRITICAL: Keep the product perfectly identical — same colors, shape, label, branding. Do NOT alter, replace, or obscure the product.",
+        "CRITICAL: Keep the product perfectly identical ï¿½ same colors, shape, label, branding. Do NOT alter, replace, or obscure the product.",
         `${BASE_REALISTIC_MOTION}`,
         ang ? `Emotional angle: ${ang}.` : "",
         customDir ? `Camera direction: ${customDir}.` : "Gentle camera drift, subtle product gleam, lifestyle atmosphere.",
@@ -1725,7 +1720,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       devlog.log("[animateImage] operation returned:", JSON.stringify(op));
       if (!op?.name) throw new Error("No operation name returned from generateVideos. Check API key permissions for Veo.");
 
-      // Poll via direct HTTP — works across all SDK versions
+      // Poll via direct HTTP ï¿½ works across all SDK versions
       const pollOp = async (name: string) => {
         const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/${name}`, {
           headers: { "x-goog-api-key": apiKey }
@@ -1739,7 +1734,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         await new Promise(r => setTimeout(r, 10000));
         op = await withRetry(() => pollOp(op.name));
         polls++;
-        devlog.log(`[animateImage] poll ${polls}/60 — done:${op.done}`, op);
+        devlog.log(`[animateImage] poll ${polls}/60 ï¿½ done:${op.done}`, op);
       }
       if (!op.done) throw new Error("Video generation timed out after 10 minutes. Please try again.");
       if (op.error) throw new Error(op.error?.message || JSON.stringify(op.error));
@@ -1814,14 +1809,14 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
           : "Pull back to show the product in its full environment, golden hour light.");
 
       const extendPrompt = [
-        `CLIP ${clipNum} OF A MULTI-PART PINTEREST VIDEO — Product: "${pd}".`,
+        `CLIP ${clipNum} OF A MULTI-PART PINTEREST VIDEO ï¿½ Product: "${pd}".`,
         kd ? `Visual identity to preserve exactly: ${kd}.` : "",
-        `CRITICAL RULES: (1) The SAME product must appear — identical colors, shape, label. (2) NO new products. (3) Seamless visual continuation from clip ${clipNum - 1}. (4) Do NOT reset to a new scene.`,
+        `CRITICAL RULES: (1) The SAME product must appear ï¿½ identical colors, shape, label. (2) NO new products. (3) Seamless visual continuation from clip ${clipNum - 1}. (4) Do NOT reset to a new scene.`,
         historyCtx,
         `THIS CLIP: ${thisDirection}`,
         ang ? `Emotional tone: ${ang}.` : "",
         `${BASE_REALISTIC_MOTION}`,
-        "Aspect ratio 9:16. Continuation only — no jump cuts, no scene resets.",
+        "Aspect ratio 9:16. Continuation only ï¿½ no jump cuts, no scene resets.",
       ].filter(Boolean).join(" ");
 
       devlog.log(`[extendVideo] clip ${clipNum} prompt:`, extendPrompt);
@@ -1870,7 +1865,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         await new Promise(r => setTimeout(r, 10000));
         op = await withRetry(() => pollOp(op.name));
         polls++;
-        devlog.log(`[extendVideo] poll ${polls}/60 — done:${op.done}`);
+        devlog.log(`[extendVideo] poll ${polls}/60 ï¿½ done:${op.done}`);
       }
       if (!op.done) throw new Error("Extension timed out after 10 minutes. Please try again.");
       if (op.error) throw new Error(op.error?.message || JSON.stringify(op.error));
@@ -1974,11 +1969,11 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             {/* Quota bars */}
             <div className="space-y-3">
               <div>
-                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><ImageIcon size={11}/>Images</span><span className="font-black">{session.imagesLeft} / {session.imagesTotal || "GêP"} left</span></div>
+                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><ImageIcon size={11}/>Images</span><span className="font-black">{session.imagesLeft} / {session.imagesTotal || "Gï¿½P"} left</span></div>
                 <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-white/80 rounded-full transition-all duration-700" style={{width:`${100-imageUsedPct}%`}}/></div>
               </div>
               <div>
-                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><Video size={11}/>Videos</span><span className="font-black">{session.videosLeft} / {session.videosTotal || "—"} left</span></div>
+                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><Video size={11}/>Videos</span><span className="font-black">{session.videosLeft} / {session.videosTotal || "ï¿½"} left</span></div>
                 <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-rose-400 rounded-full transition-all duration-700" style={{width:`${100-videoUsedPct}%`}}/></div>
               </div>
             </div>
@@ -2048,8 +2043,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700":
               "bg-slate-50 border-slate-200 text-slate-500")}>
               <CreditCard size={15}/>
-              {stripeStatus==="live" ? `Stripe connected · ${stripe.secretKey?.startsWith("sk_live")||stripe.secretKey?.startsWith("rk_live")?"Live mode ?":"Test mode"} · All prices ready` :
-               stripeStatus==="partial" ? "Stripe keys found — prices needed" :
+              {stripeStatus==="live" ? `Stripe connected ï¿½ ${stripe.secretKey?.startsWith("sk_live")||stripe.secretKey?.startsWith("rk_live")?"Live mode ?":"Test mode"} ï¿½ All prices ready` :
+               stripeStatus==="partial" ? "Stripe keys found ï¿½ prices needed" :
                <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
             </div>
 
@@ -2138,7 +2133,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               {(["monthly","annual"] as const).map(b=>(
                 <button key={b} onClick={()=>setBillingCycle(b)}
                   className={cn("px-4 py-1.5 rounded-xl text-xs font-black transition-all",billingCycle===b?"bg-white text-rose-600":"text-white/70 hover:text-white")}>
-                  {b==="monthly"?"Monthly":"Annual · Save 30%"}
+                  {b==="monthly"?"Monthly":"Annual ï¿½ Save 30%"}
                 </button>
               ))}
             </div>
@@ -2157,7 +2152,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <p className="font-black text-slate-900">{p.emoji} {key.charAt(0).toUpperCase()+key.slice(1)}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{p.images} images · {p.videos} videos/mo</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{p.images} images ï¿½ {p.videos} videos/mo</p>
                       <div className="flex flex-wrap gap-1 mt-2">
                         {p.features.slice(0,3).map((f:string)=><span key={f} className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{f}</span>)}
                       </div>
@@ -2187,7 +2182,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                 })}
               </div>
             </div>
-            <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe · Cancel anytime</p>
+            <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe ï¿½ Cancel anytime</p>
           </div>
         </motion.div>
       </div>
@@ -2205,7 +2200,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
           className="bg-white rounded-[2rem] shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
           <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white sticky top-0 z-10">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">{stripe.secretKey?.startsWith("sk_live") || stripe.secretKey?.startsWith("rk_live") ? "?? Live mode" : "?? Test mode"} · Auto-reads from .env</p></div></div>
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">{stripe.secretKey?.startsWith("sk_live") || stripe.secretKey?.startsWith("rk_live") ? "?? Live mode" : "?? Test mode"} ï¿½ Auto-reads from .env</p></div></div>
               <button onClick={()=>setShowStripeSetup(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={17}/></button>
             </div>
           </div>
@@ -2227,16 +2222,16 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
 
             {envHasKeys&&stripe.secretKey&&<div className="flex items-start gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><ShieldCheck size={16} className="text-emerald-600 mt-0.5 shrink-0"/><div><p className="text-sm font-bold text-emerald-800">Stripe keys auto-loaded from .env ?</p><p className="text-xs text-emerald-700 mt-0.5">Your <code className="bg-emerald-100 px-1 rounded">STRIPE_SECRET_KEY</code> and <code className="bg-emerald-100 px-1 rounded">STRIPE_PUBLISHABLE_KEY</code> were detected automatically.</p></div></div>}
 
-            {/* Always show key inputs — SK can't be read client-side without VITE_ prefix */}
+            {/* Always show key inputs ï¿½ SK can't be read client-side without VITE_ prefix */}
             {!stripe.secretKey && (
               <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-200">
                 <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0"/>
-                <p className="text-sm text-amber-700">Stripe Secret Key not accessible in browser. Paste it below once — it's stored locally and never sent anywhere except Stripe's API directly.</p>
+                <p className="text-sm text-amber-700">Stripe Secret Key not accessible in browser. Paste it below once ï¿½ it's stored locally and never sent anywhere except Stripe's API directly.</p>
               </div>
             )}
             <div className="space-y-3">
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secret Key <span className="normal-case font-normal text-slate-300">(sk_test_... · stored locally)</span></label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secret Key <span className="normal-case font-normal text-slate-300">(sk_test_... ï¿½ stored locally)</span></label>
                 <input type="password" placeholder="sk_test_..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-slate-400 outline-none" value={manualSk} onChange={e=>setManualSk(e.target.value)}/>
               </div>
               <div className="space-y-2">
@@ -2248,13 +2243,13 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
 
             {stripe.keysPresent && priceCount < 13 && (
               <div className="space-y-3">
-                <div className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-200"><AlertCircle size={15} className="text-rose-600 mt-0.5 shrink-0"/><div><p className="text-sm font-black text-rose-800">? {13-priceCount} Price ID{13-priceCount>1?"s":""} Missing — Checkout Won't Work</p><p className="text-xs text-rose-700 mt-1">Click the button below to auto-create all missing prices in your Stripe account. This only takes a few seconds.</p></div></div>
+                <div className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-200"><AlertCircle size={15} className="text-rose-600 mt-0.5 shrink-0"/><div><p className="text-sm font-black text-rose-800">? {13-priceCount} Price ID{13-priceCount>1?"s":""} Missing ï¿½ Checkout Won't Work</p><p className="text-xs text-rose-700 mt-1">Click the button below to auto-create all missing prices in your Stripe account. This only takes a few seconds.</p></div></div>
                 <button onClick={autoCreatePrices} disabled={isCreatingPrices} className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-100 transition-all hover:scale-[1.01]">{isCreatingPrices?<><Loader2 className="animate-spin" size={16}/>Creating prices in Stripe...</>:<><CreditCard size={16}/>Auto-Create All {13-priceCount} Missing Prices</>}</button>
               </div>
             )}
-            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active — checkout is live ?</p></div>}
+            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active ï¿½ checkout is live ?</p></div>}
 
-            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("=ƒÄë")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  ?")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">Gûè</p>}</div>}
+            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("=ï¿½ï¿½ï¿½")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  ?")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">Gï¿½ï¿½</p>}</div>}
             {creationError&&<div className="flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={13} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{creationError}</p></div>}
           </div>
         </motion.div>
@@ -2329,7 +2324,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <h2 className="text-4xl sm:text-6xl font-extrabold text-slate-900 mb-4 tracking-tight">
               What are you <span className="text-rose-600">selling</span> today?
             </h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-8">Follow the steps below — product to viral pin in minutes.</p>
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-8">Follow the steps below ï¿½ product to viral pin in minutes.</p>
               <div className="max-w-2xl mx-auto space-y-3">
               <div className="bg-white border border-slate-200 rounded-3xl shadow-sm focus-within:ring-2 focus-within:ring-rose-500 transition-all overflow-hidden">
                   <div className="flex items-start px-4 pt-4">
@@ -2343,7 +2338,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                     />
                   </div>
                   <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-                    <p className="text-[11px] text-slate-400">?? to generate · Paste a URL to auto-import product info & images</p>
+                    <p className="text-[11px] text-slate-400">?? to generate ï¿½ Paste a URL to auto-import product info & images</p>
                     <button onClick={generateStrategy} disabled={isLoading||!productName.trim()}
                       className="px-7 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold rounded-2xl shadow-lg shadow-rose-100 transition-all flex items-center gap-2 group text-sm">
                       {isLoading?<Loader2 className="animate-spin" size={16}/>:<>Generate Strategy<ArrowRight size={15} className="group-hover:translate-x-1 transition-transform"/></>}
@@ -2361,7 +2356,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
               <div className="lg:col-span-7 space-y-10">
 
-                {/* Step 1 — Viral Angle */}
+                {/* Step 1 ï¿½ Viral Angle */}
                 <StepCard number={1} title="Choose Viral Angle" subtitle="Pick the psychology behind your pin">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {strategy.angles.map((angle,i)=>(
@@ -2376,8 +2371,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   </div>
                 </StepCard>
 
-                {/* Step 2 — Upload */}
-                <StepCard number={2} title="Upload Your Product Photo" subtitle="AI keeps your product identical — only the world around it changes">
+                {/* Step 2 ï¿½ Upload */}
+                <StepCard number={2} title="Upload Your Product Photo" subtitle="AI keeps your product identical ï¿½ only the world around it changes">
                   <div className="space-y-4">
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -2410,7 +2405,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                               <div>
                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Product URL</p>
                                 <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
-                                  Paste your product URL to pull star ratings &amp; review counts — and import product images directly.
+                                  Paste your product URL to pull star ratings &amp; review counts ï¿½ and import product images directly.
                                 </p>
                                 <div className="relative">
                                   <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-300">
@@ -2462,7 +2457,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                             <div className="space-y-3">
                               {isFetchingUrlImages ? (
                                 <div>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Fetching Images…</p>
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Fetching Imagesï¿½</p>
                                   <div className="flex items-center gap-2 text-violet-600 text-xs font-bold bg-violet-50 px-3 py-2 rounded-xl border border-violet-100 animate-pulse">
                                     <Loader2 size={12} className="animate-spin"/>Importing images from URL...
                                   </div>
@@ -2529,7 +2524,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                                   </div>
                                 </div>
                               ) : (
-                                /* URL provided but no images found — let them try a different URL */
+                                /* URL provided but no images found ï¿½ let them try a different URL */
                                 <div className="space-y-2">
                                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Images Not Available</p>
                                   <p className="text-[11px] text-slate-400 leading-relaxed">
@@ -2579,7 +2574,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                           className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                           <div className="px-6 pt-5 pb-4 border-b border-slate-100">
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2.5"><div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Shuffle size={15}/></div><div><p className="font-black text-slate-900 text-sm">Scene Environment</p><p className="text-[10px] text-slate-400">Same product · Different world</p></div></div>
+                              <div className="flex items-center gap-2.5"><div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Shuffle size={15}/></div><div><p className="font-black text-slate-900 text-sm">Scene Environment</p><p className="text-[10px] text-slate-400">Same product ï¿½ Different world</p></div></div>
                               {isAnalyzingProduct&&<div className="flex items-center gap-1.5 text-violet-600 text-[10px] font-bold bg-violet-50 px-2.5 py-1 rounded-full border border-violet-100 animate-pulse"><Loader2 size={9} className="animate-spin"/>Generating...</div>}
                             </div>
                             {productAnalysis?.productDescription&&<motion.div initial={{opacity:0}} animate={{opacity:1}} className="mt-3 space-y-2">
@@ -2618,7 +2613,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   </div>
                 </StepCard>
 
-                {/* Step 3 — Copy & SEO */}
+                {/* Step 3 ï¿½ Copy & SEO */}
                 <StepCard number={3} title="Copy & SEO Content" subtitle="Headlines, description and tags ready to copy" badge="Auto-generated">
                   {selectedAngleIndex!==null&&(
                     <div className="space-y-4">
@@ -2627,7 +2622,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                         <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-[1.5rem] p-4 space-y-2">
                           <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-violet-600 rounded-lg flex items-center justify-center"><span className="text-white text-[9px] font-black">B</span></div>
-                            <p className="text-xs font-black text-violet-700">A/B Variant — Different Angle</p>
+                            <p className="text-xs font-black text-violet-700">A/B Variant ï¿½ Different Angle</p>
                           </div>
                           <p className="font-black text-slate-900 text-sm">"{abVariantB.hook}"</p>
                           <p className="text-xs text-slate-500">{abVariantB.subtext}</p>
@@ -2641,7 +2636,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                         <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-[1.5rem] p-4 space-y-2">
                           <div className="flex items-center gap-2">
                             <div className="w-6 h-6 bg-violet-600 rounded-lg flex items-center justify-center"><span className="text-white text-[9px] font-black">B</span></div>
-                            <p className="text-xs font-black text-violet-700">A/B Variant — Different Angle</p>
+                            <p className="text-xs font-black text-violet-700">A/B Variant ï¿½ Different Angle</p>
                           </div>
                           <p className="font-black text-slate-900 text-sm">"{abVariantB.hook}"</p>
                           <p className="text-xs text-slate-500">{abVariantB.subtext}</p>
@@ -2678,7 +2673,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   )}
                 </StepCard>
 
-                {/* Step 4 — Generate Visual */}
+                {/* Step 4 ï¿½ Generate Visual */}
                 <StepCard number={4} title="Generate Your Pin Visual" subtitle="AI creates a stunning product image based on your angle and scene">
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     {sceneInfo&&<div className={cn("flex items-center gap-2 px-4 py-2 rounded-xl border w-fit text-xs font-bold",sceneInfo.color==="violet"?"bg-violet-50 border-violet-100 text-violet-700":"bg-rose-50 border-rose-100 text-rose-700")}><div className={cn("w-1.5 h-1.5 rounded-full animate-pulse",sceneInfo.color==="violet"?"bg-violet-500":"bg-rose-500")}/>Scene: {sceneInfo.label}</div>}
@@ -2704,18 +2699,18 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   </div>
                 </StepCard>
 
-                {/* Step 5 — Voiceover */}
-                <StepCard number={5} title="Voiceover Script" subtitle="Optional — ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
+                {/* Step 5 ï¿½ Voiceover */}
+                <StepCard number={5} title="Voiceover Script" subtitle="Optional ï¿½ ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
                   <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-100">
-                      <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec · Matched to your angle</p></div></div>
+                      <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec ï¿½ Matched to your angle</p></div></div>
                       <div className="space-y-2 mb-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tone</p><div className="grid grid-cols-5 gap-2">{VOICE_TONES.map(t=><button key={t.id} onClick={()=>setSelectedVoiceTone(t.id)} className={cn("flex flex-col items-center gap-1 p-2.5 rounded-2xl border-2 transition-all hover:scale-[1.03]",selectedVoiceTone===t.id?"border-rose-500 bg-rose-50":"border-slate-100 bg-slate-50 hover:border-rose-200")}><span className="text-base">{t.emoji}</span><p className={cn("text-[9px] font-black uppercase tracking-tight",selectedVoiceTone===t.id?"text-rose-700":"text-slate-500")}>{t.label}</p></button>)}</div><p className="text-[11px] text-slate-400">{VOICE_TONES.find(t=>t.id===selectedVoiceTone)?.desc}</p></div>
                       <button onClick={generateVoiceover} disabled={isGeneratingVoiceover||selectedAngleIndex===null} className="w-full py-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-50">{isGeneratingVoiceover?<><Loader2 className="animate-spin" size={15}/>Writing...</>:<><FileText size={15}/>Generate Script</>}</button>
                     </div>
                     <AnimatePresence>{voiceoverScript&&(
                       <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}}>
                         <div className="p-6 space-y-4">
-                          <div className="flex items-center justify-between"><button onClick={()=>setVoiceoverExpanded(!voiceoverExpanded)} className="flex items-center gap-2 text-slate-900 font-black text-sm"><Volume2 size={14} className="text-rose-500"/>Your Script{voiceoverExpanded?<ChevronUp size={12}/>:<ChevronDown size={12}/>}</button><div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Gëê {voiceoverScript.duration}</span><button onClick={()=>copyToClipboard(voiceoverScript.script,"script")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="script"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button></div></div>
+                          <div className="flex items-center justify-between"><button onClick={()=>setVoiceoverExpanded(!voiceoverExpanded)} className="flex items-center gap-2 text-slate-900 font-black text-sm"><Volume2 size={14} className="text-rose-500"/>Your Script{voiceoverExpanded?<ChevronUp size={12}/>:<ChevronDown size={12}/>}</button><div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Gï¿½ï¿½ {voiceoverScript.duration}</span><button onClick={()=>copyToClipboard(voiceoverScript.script,"script")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="script"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button></div></div>
                           {voiceoverExpanded&&<motion.div initial={{opacity:0}} animate={{opacity:1}} className="space-y-4">
                             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100"><p className="text-slate-700 text-sm leading-loose font-medium whitespace-pre-wrap">{voiceoverScript.script}</p></div>
                             {voiceoverScript.hooks?.length>0&&<div className="space-y-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Play size={9}/>Alternative Hooks</p>{voiceoverScript.hooks.map((hook,i)=><div key={i} className="flex items-start gap-2 p-3 bg-white border border-slate-100 rounded-2xl group hover:border-rose-200 transition-all"><span className="text-[10px] font-black text-slate-300 mt-0.5 shrink-0">{i+1}</span><p className="text-xs text-slate-600 font-medium flex-1">{hook}</p><button onClick={()=>copyToClipboard(hook,`hook-${i}`)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-300 group-hover:text-slate-400">{copiedField===`hook-${i}`?<Check size={11} className="text-emerald-500"/>:<Copy size={11}/>}</button></div>)}</div>}
@@ -2727,14 +2722,14 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   </div>
                 </StepCard>
 
-                {/* Step 6 — Animate & Export */}
+                {/* Step 6 ï¿½ Animate & Export */}
                 <StepCard number={6} title="Animate & Export" subtitle="Bring your pin to life as video, then download everything" dimmed={!generatedImage&&!uploadedImage}>
                   <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
                     <div className="space-y-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Animation Vibe</p><textarea className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none transition-all h-20 resize-none font-medium" value={animationPrompt} onChange={e=>setAnimationPrompt(e.target.value)} placeholder="Describe the motion style..."/></div>
                     <div className="space-y-3">
                       {(generatedImage||uploadedImage)&&<button onClick={downloadImage} className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={16}/>Download Pin Image</button>}
                       {session.videosLeft<=0?<button onClick={()=>setShowUpgradeModal(true)} className="w-full py-4 bg-slate-100 border-2 border-dashed border-slate-300 text-slate-500 font-black rounded-2xl flex items-center justify-center gap-2 hover:border-indigo-400 hover:text-indigo-500 transition-all"><Lock size={16}/>Upgrade for Video ({session.plan==="free"?"paid plan required":"add video top-up"})</button>:
-                       (!animatedVideoUrl&&!isAnimating&&(generatedImage||uploadedImage))?<button onClick={animateImage} className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Zap size={16}/>Bring It To Life · {session.videosLeft} left</button>:null}
+                       (!animatedVideoUrl&&!isAnimating&&(generatedImage||uploadedImage))?<button onClick={animateImage} className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Zap size={16}/>Bring It To Life ï¿½ {session.videosLeft} left</button>:null}
                       {animatedVideoUrl&&<div className="space-y-3"><div className="flex justify-center"><div className="aspect-[9/16] w-48 rounded-2xl overflow-hidden bg-slate-100 shadow-inner"><video src={animatedVideoUrl} className="w-full h-full object-cover" controls autoPlay loop muted/></div></div>
                         <div className="grid grid-cols-2 gap-2">
                           <button onClick={downloadVideo} className="py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={15}/>Download</button>
@@ -2745,7 +2740,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                               className="py-3.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-black rounded-2xl shadow-xl shadow-violet-100 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01] text-sm">
                               {isExtending?<><Loader2 className="animate-spin" size={15}/>Extending...</>
                                :extendCount>=MAX_EXTENSIONS?<><RefreshCw size={15}/>Max Extensions Reached</>
-                               :<><RefreshCw size={15}/>Extend · {extendCount}/{MAX_EXTENSIONS} · {session.videosLeft} left</>}
+                               :<><RefreshCw size={15}/>Extend ï¿½ {extendCount}/{MAX_EXTENSIONS} ï¿½ {session.videosLeft} left</>}
                             </button>
                           )}
                         </div>
@@ -2798,7 +2793,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                       </div>
                     </>
                   ):(
-                    <div className="aspect-[2/3] max-w-[280px] mx-auto bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center gap-3 text-center p-6"><div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ImageIcon size={22} className="text-slate-200"/></div><div><p className="font-black text-slate-400 text-sm">Pin preview</p><p className="text-xs text-slate-300 mt-0.5">Complete steps 1–4</p></div></div>
+                    <div className="aspect-[2/3] max-w-[280px] mx-auto bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center gap-3 text-center p-6"><div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ImageIcon size={22} className="text-slate-200"/></div><div><p className="font-black text-slate-400 text-sm">Pin preview</p><p className="text-xs text-slate-300 mt-0.5">Complete steps 1ï¿½4</p></div></div>
                   )}
                 </div>
 
@@ -2817,7 +2812,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="text-xl">{planDef.emoji}</span>
-                      <div><p className="text-xs font-black text-slate-800 capitalize">{session.plan} Plan</p><p className="text-[9px] text-slate-400">{session.imagesLeft} imgs · {session.videosLeft} vids left</p></div>
+                      <div><p className="text-xs font-black text-slate-800 capitalize">{session.plan} Plan</p><p className="text-[9px] text-slate-400">{session.imagesLeft} imgs ï¿½ {session.videosLeft} vids left</p></div>
                     </div>
                     <button onClick={()=>setShowAccountModal(true)} className="px-3 py-1.5 text-[10px] font-black text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all flex items-center gap-1"><Settings size={11}/>Manage</button>
                   </div>
@@ -2834,7 +2829,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         {!strategy&&!isLoading&&(
           <motion.div initial={{opacity:0}} animate={{opacity:1}} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
             <FeatureCard icon={<Zap className="text-rose-500"/>}       title="Viral Psychology"     desc="Proven impulse-buy triggers that get your pins saved and shared."/>
-            <FeatureCard icon={<Shuffle className="text-violet-500"/>} title="5 Auto Scene Options" desc="Upload once — AI places your product in 5 stunning Pinterest-ready scenes."/>
+            <FeatureCard icon={<Shuffle className="text-violet-500"/>} title="5 Auto Scene Options" desc="Upload once ï¿½ AI places your product in 5 stunning Pinterest-ready scenes."/>
             <FeatureCard icon={<Mic className="text-rose-500"/>}       title="Voiceover Scripts"    desc="Ready-to-record script matched to your pin's tone and angle."/>
           </motion.div>
         )}
@@ -2843,7 +2838,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         <section id="pricing-section" className="py-24 border-t border-slate-100">
           <div className="max-w-6xl mx-auto">
             <div className="text-center max-w-3xl mx-auto mb-12">
-              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content — <span className="text-rose-600">Without Designers</span></h2>
+              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content ï¿½ <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
               {!stripe.keysPresent&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">Add Stripe keys to .env to activate checkout</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">Setup Stripe</button></motion.div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
@@ -2886,7 +2881,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                 {session.plan==="free"?<div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold"><Check size={15}/>You're on the free plan</div>:<button className="w-full px-8 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl transition-all flex items-center justify-center gap-2">Try for Free<ArrowRight size={15}/></button>}
               </div>
             </div>
-            <div className="text-center"><p className="text-xl md:text-2xl font-bold text-slate-400 italic">"Create scroll-stopping content at scale — <span className="text-slate-900">without hiring designers or editors.</span>"</p></div>
+            <div className="text-center"><p className="text-xl md:text-2xl font-bold text-slate-400 italic">"Create scroll-stopping content at scale ï¿½ <span className="text-slate-900">without hiring designers or editors.</span>"</p></div>
           </div>
         </section>
       </main>
@@ -2894,15 +2889,15 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       <footer className="border-t border-slate-200 py-10 bg-white">
         <div className="max-w-6xl mx-auto px-4 text-center space-y-3">
           <div className="flex items-center justify-center gap-2"><div className="w-6 h-6 bg-rose-600 rounded flex items-center justify-center text-white"><Sparkles size={12}/></div><span className="font-bold text-slate-800">PinViral</span></div>
-          <p className="text-slate-400 text-sm">Built for e-commerce brands and lifestyle creators. © 2026 PinViral AI.</p>
+          <p className="text-slate-400 text-sm">Built for e-commerce brands and lifestyle creators. ï¿½ 2026 PinViral AI.</p>
           <div className="flex items-center justify-center gap-4 text-xs text-slate-400">
             <button onClick={()=>setShowTermsPage(true)} className="hover:text-rose-600 transition-colors">Terms of Service</button>
-            <span>·</span>
+            <span>ï¿½</span>
             <button onClick={()=>setShowPrivacyPage(true)} className="hover:text-rose-600 transition-colors">Privacy Policy</button>
-            <span>·</span>
+            <span>ï¿½</span>
             <button onClick={()=>setShowRefundPage(true)} className="hover:text-rose-600 transition-colors">Refund Policy</button>
           </div>
-          <p className="text-slate-300 text-xs flex items-center justify-center gap-2"><CreditCard size={11}/>Payments by Stripe · Images processed by Google Gemini</p>
+          <p className="text-slate-300 text-xs flex items-center justify-center gap-2"><CreditCard size={11}/>Payments by Stripe ï¿½ Images processed by Google Gemini</p>
         </div>
       </footer>
 
@@ -2966,7 +2961,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                     </select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publish Date <span className="normal-case font-normal text-slate-300">(optional — publish now if blank)</span></label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publish Date <span className="normal-case font-normal text-slate-300">(optional ï¿½ publish now if blank)</span></label>
                     <input type="datetime-local" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}
                       className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-red-400"/>
                   </div>
@@ -3046,7 +3041,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                 </button>
                 <button onClick={()=>{setShowExtendModal(false); extendVideo(extendCustomPrompt.trim()||undefined); setExtendCustomPrompt("");}}
                   className="flex-1 py-3 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-2xl text-sm shadow-lg shadow-violet-100 transition-all flex items-center justify-center gap-2">
-                  <RefreshCw size={14}/> Extend · {session.videosLeft} left
+                  <RefreshCw size={14}/> Extend ï¿½ {session.videosLeft} left
                 </button>
               </div>
             </div>
@@ -3076,8 +3071,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               {tourStep===2&&<>
                 <div className="w-14 h-14 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto"><Wand2 size={24} className="text-violet-600"/></div>
                 <h3 className="text-xl font-black text-slate-900">Step 2: Pick a Viral Angle</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">After analyzing your product, we'll generate 3 angles based on proven Pinterest psychology — Curiosity, Social Proof, or FOMO. Pick the one that fits your audience.</p>
-                <div className="bg-violet-50 rounded-2xl p-3 border border-violet-100 text-left"><p className="text-xs text-violet-700 font-medium italic">"Survival Preparedness · The Perfect Gift · Hiker's Essential"</p><p className="text-[10px] text-violet-400 mt-1">? Example angles for a multi-tool product</p></div>
+                <p className="text-slate-500 text-sm leading-relaxed">After analyzing your product, we'll generate 3 angles based on proven Pinterest psychology ï¿½ Curiosity, Social Proof, or FOMO. Pick the one that fits your audience.</p>
+                <div className="bg-violet-50 rounded-2xl p-3 border border-violet-100 text-left"><p className="text-xs text-violet-700 font-medium italic">"Survival Preparedness ï¿½ The Perfect Gift ï¿½ Hiker's Essential"</p><p className="text-[10px] text-violet-400 mt-1">? Example angles for a multi-tool product</p></div>
               </>}
               {tourStep===3&&<>
                 <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto"><ImageIcon size={24} className="text-emerald-600"/></div>
@@ -3132,15 +3127,15 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             {showPrivacyPage&&(
               <div className="space-y-6">
                 <h1 className="text-3xl font-black text-slate-900">Privacy Policy</h1>
-                <p className="text-slate-400 text-sm">Last updated: January 2026 · Compliant with GDPR & CCPA</p>
+                <p className="text-slate-400 text-sm">Last updated: January 2026 ï¿½ Compliant with GDPR & CCPA</p>
                 {[
-                  ["Data We Collect","Email address (on subscription); product images you upload; browser fingerprint (canvas hash, audio fingerprint, device properties); usage data (images generated, plans purchased); Stripe payment data (processed by Stripe — we never see card numbers)."],
+                  ["Data We Collect","Email address (on subscription); product images you upload; browser fingerprint (canvas hash, audio fingerprint, device properties); usage data (images generated, plans purchased); Stripe payment data (processed by Stripe ï¿½ we never see card numbers)."],
                   ["How We Use It","To provide and improve PinViral; to enforce free-plan limits (fingerprinting); to process payments; to send transactional emails (receipts, plan changes)."],
                   ["Browser Fingerprinting","We collect a browser fingerprint to enforce the 1-device free trial policy. This fingerprint is stored in your browser (localStorage and IndexedDB). It is not shared with third parties."],
-                  ["Subprocessors","Google Gemini API (image processing) — covered by Google's DPA at cloud.google.com/terms/data-processing-addendum. Stripe (payments). corsproxy.io / allorigins.win (URL image fetching — no personal data)."],
+                  ["Subprocessors","Google Gemini API (image processing) ï¿½ covered by Google's DPA at cloud.google.com/terms/data-processing-addendum. Stripe (payments). corsproxy.io / allorigins.win (URL image fetching ï¿½ no personal data)."],
                   ["Data Retention","Session data is stored locally in your browser. We do not maintain a cloud database of user data unless you have an active subscription."],
                   ["Your Rights (GDPR/CCPA)","Right to access, correct, delete, and export your data. Use 'Export Data' in Account Settings. To delete your account and all associated data email privacy@pinviral.ai."],
-                  ["Cookies","We use localStorage and IndexedDB — no third-party tracking cookies. See our Cookie Consent banner for details."],
+                  ["Cookies","We use localStorage and IndexedDB ï¿½ no third-party tracking cookies. See our Cookie Consent banner for details."],
                   ["Contact","privacy@pinviral.ai"],
                 ].map(([title,body])=>(
                   <div key={title as string} className="space-y-2">
@@ -3159,7 +3154,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   ["After 14 Days","We do not offer refunds after the 14-day window except where required by law (e.g. EU consumer rights). Partial-month refunds are not provided."],
                   ["Top-up Packs","Image and video top-up packs are non-refundable once credits have been used. Unused credits may be refunded within 14 days of purchase."],
                   ["Chargebacks","Filing a chargeback without first contacting us will result in permanent account suspension. We respond to all refund requests within 2 business days."],
-                  ["How to Request","Email refunds@pinviral.ai with your account email and order ID. We process refunds within 5–10 business days via your original payment method."],
+                  ["How to Request","Email refunds@pinviral.ai with your account email and order ID. We process refunds within 5ï¿½10 business days via your original payment method."],
                 ].map(([title,body])=>(
                   <div key={title as string} className="space-y-2">
                     <h2 className="text-lg font-black text-slate-900">{title}</h2>
@@ -3192,7 +3187,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-rose-500 to-violet-500 rounded-full transition-all duration-[2s] ease-out" style={{width:`${videoProgress}%`}}/>
               </div>
-              <p className="text-[10px] text-slate-400">Typical: 60–90 seconds · Please don't close this tab</p>
+              <p className="text-[10px] text-slate-400">Typical: 60ï¿½90 seconds ï¿½ Please don't close this tab</p>
             </div>
           </div>
         </div>
