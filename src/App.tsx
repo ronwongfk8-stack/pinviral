@@ -1613,29 +1613,43 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
     return `High-quality Pinterest product photography for ${productName||"the product"}.`;
   };
 
-  const generateImage = async () => {
+ const generateImage = async () => {
   if (!strategy && !uploadedImage) return;
   if (session.imagesLeft <= 0) { setShowUpgradeModal(true); return; }
   setIsGeneratingImage(true); setError(null);
   try {
-    const ai = getAI();
-    const prompt = buildPrompt();
+    const vite = (typeof import.meta !== "undefined" && (import.meta as any).env) ? (import.meta as any).env : {};
+    const apiKey = vite["VITE_API_KEY"] || vite["VITE_GEMINI_API_KEY"] || readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
+    if (!apiKey) throw new Error("API_KEY_MISSING");
+
     const pd = productAnalysis?.productDescription || productName || "the product";
     const kd = productAnalysis?.keyVisualDetails || "";
-
+    const prompt = buildPrompt();
     const fullPrompt = uploadedImage
-      ? `Professional Pinterest product photo. Product: ${pd}. ${kd ? "Preserve: " + kd + "." : ""} Scene: ${prompt}. Style: clean, lifestyle, 2:3 ratio.`
+      ? `Professional Pinterest product photo. Product: ${pd}. ${kd ? "Preserve: " + kd + "." : ""} Scene: ${prompt}. Style: clean lifestyle photography, 2:3 ratio.`
       : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy && selectedAngleIndex !== null ? strategy.angles[selectedAngleIndex].psychology : "professional lifestyle photography"}.`;
 
-    const r = await withRetry(() => ai.models.generateImages({
-      model: "imagen-3.0-generate-002",
-      prompt: fullPrompt,
-      config: { numberOfImages: 1, aspectRatio: "2:3" },
-    }));
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          instances: [{ prompt: fullPrompt }],
+          parameters: { sampleCount: 1, aspectRatio: "2:3" },
+        }),
+      }
+    );
 
-    const imgBytes = r.images?.[0]?.imageBytes;
-    if (imgBytes) {
-      setGeneratedImage(`data:image/png;base64,${imgBytes}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err?.error?.message || `Imagen API error ${res.status}`);
+    }
+
+    const data = await res.json();
+    const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
+    if (b64) {
+      setGeneratedImage(`data:image/png;base64,${b64}`);
       consumeImage();
       return;
     }
@@ -1643,22 +1657,6 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
   } catch (err: any) { handleApiError(err, "Failed to generate image."); }
   finally { setIsGeneratingImage(false); }
 };
-
-  const generateVoiceover = async () => {
-    if (!strategy || selectedAngleIndex===null) return;
-    setIsGeneratingVoiceover(true);
-    try {
-      const ai = getAI(); const angle = strategy.angles[selectedAngleIndex];
-      const prompt = `${selectedVoiceTone.toUpperCase()} Pinterest video voiceover (15-30 sec). Product: ${productName}. Angle: ${angle.title}. Psychology: ${angle.psychology}. Headline: ${editableHeadline}. Benefit: ${editableSubtext}. CTA: ${editableCTA}. ${socialProof?.stars?"Stars: "+socialProof.stars:""} Return JSON: { "tone":"${selectedVoiceTone}", "duration":"est read time", "script":"full script with \\n breaks and (pause) markers, 40-80 words", "hooks":["3 alternative opening lines"] }`;
-      let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:prompt, config:{responseMimeType:"application/json"} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:prompt, config:{responseMimeType:"application/json"} })); else throw e; }
-      setVoiceoverScript(JSON.parse((r as any).text||"{}"));
-      setVoiceoverExpanded(true);
-    } catch (err: any) { handleApiError(err, "Failed to generate voiceover."); }
-    finally { setIsGeneratingVoiceover(false); }
-  };
-
   const animateImage = async () => {
     const src = generatedImage||uploadedImage; if (!src) return;
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
