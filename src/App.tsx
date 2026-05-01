@@ -22,7 +22,7 @@
  * ──────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { GoogleGenAI, Type } from "@google/genai";
 import { toPng } from "html-to-image";
 import {
@@ -37,6 +37,9 @@ import {
   Gift, Zap as Flash
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+const isDev = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+const devlog = { warn: (...a: any[]) => { if (isDev) console.warn(...a); }, log: (...a: any[]) => { if (isDev) console.log(...a); }, error: (...a: any[]) => { if (isDev) console.error(...a); } };
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -383,7 +386,26 @@ function StepCard({ number, title, subtitle, badge, children, dimmed = false }:
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
-export default function App() {
+class ErrorBoundary extends React.Component<{children:React.ReactNode},{hasError:boolean;message:string}> {
+  constructor(props:any){super(props);this.state={hasError:false,message:""};}
+  static getDerivedStateFromError(err:Error){return{hasError:true,message:err.message};}
+  render(){
+    if(this.state.hasError)return(
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
+        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 text-center space-y-4">
+          <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto text-3xl">⚠️</div>
+          <h2 className="text-xl font-black text-slate-900">Something went wrong</h2>
+          <p className="text-sm text-slate-500 font-mono bg-slate-50 p-3 rounded-xl text-left break-words">{this.state.message}</p>
+          <button onClick={()=>{this.setState({hasError:false,message:""});window.location.reload();}}
+            className="px-6 py-3 bg-rose-600 text-white font-black rounded-2xl hover:bg-rose-700 transition-all">Reload App</button>
+        </div>
+      </div>
+    );
+    return this.props.children;
+  }
+}
+
+function AppInner() {
   // SaaS session
   const [session, setSession]                               = useState<UserSession>(defaultSession());
   // AI / app state
@@ -1163,8 +1185,8 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
     (async () => {
       try {
         let r2: any;
-        try { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:step2Prompt, config:step2Schema })); }
-        catch (e: any) { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:step2Prompt, config:step2Schema })); }
+        try { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:step2Prompt, config:step2Schema })); }
+        catch (e: any) { r2 = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step2Prompt, config:step2Schema })); }
         const step2 = JSON.parse((r2 as any).text || "{}");
         const enriched: any[] = step2.angles || [];
         if (enriched.length) {
@@ -1282,7 +1304,7 @@ Return ONLY a JSON object (no markdown fences):
             }
           }
         } catch (urlErr) {
-          console.warn("[URL step1 urlContext failed]", urlErr);
+          devlog.warn("[URL step1 urlContext failed]", urlErr);
           // Fall through to standard text-based generation below
         }
       }
@@ -1314,8 +1336,8 @@ Return ONLY a JSON object (no markdown fences):
       };
 
       let r1fallback: any;
-      try { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:step1Prompt, config:step1Schema })); }
-      catch (e: any) { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:step1Prompt, config:step1Schema })); }
+      try { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:step1Prompt, config:step1Schema })); }
+      catch (e: any) { r1fallback = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:step1Prompt, config:step1Schema })); }
       const step1 = JSON.parse((r1fallback as any).text || "{}");
       const leanAngles: any[] = step1.angles || [];
       if (!leanAngles.length) throw new Error("No angles returned. Please try again.");
@@ -1352,8 +1374,8 @@ Return ONLY a JSON object (no markdown fences):
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
       const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] — unchanged — placed in [50-80 word scene]..." } ...5 total ] }`;
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
+      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); }
+      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts:[{inlineData:{data:b64,mimeType:mime}},{text:prompt}]}], config:{responseMimeType:"application/json"} })); else throw e; }
       const res = JSON.parse((r as any).text || "{}") as ProductAnalysis;
       setProductAnalysis(res);
       if (res.environments?.length > 0) setSelectedEnvId(res.environments[0].id);
@@ -1383,10 +1405,10 @@ Return ONLY a JSON object (no markdown fences):
       const cfg: any = { responseMimeType: "application/json" };
       let r: any;
       try {
-        r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:[{role:"user",parts}], config:cfg }));
+        r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:[{role:"user",parts}], config:cfg }));
       } catch (e: any) {
         if (e.message?.includes("403") || e.message?.includes("404") || e.message?.includes("NOT_FOUND")) {
-          r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:[{role:"user",parts}], config:cfg }));
+          r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:[{role:"user",parts}], config:cfg }));
         } else throw e;
       }
       const raw = (r as any).text || "{}";
@@ -1397,7 +1419,7 @@ Return ONLY a JSON object (no markdown fences):
         if (res.suggestedSubtext)  setEditableSubtext(res.suggestedSubtext);
       }
     } catch (err: any) {
-      console.warn("[fetchSocialProof]", err?.message || err);
+      devlog.warn("[fetchSocialProof]", err?.message || err);
     } finally {
       setIsAnalyzingSocialProof(false);
     }
@@ -1428,7 +1450,7 @@ Return ONLY a JSON object (no markdown fences):
 
       setUrlImages(imgs);
     } catch (err) {
-      console.warn("[fetchUrlImages]", err);
+      devlog.warn("[fetchUrlImages]", err);
     } finally {
       setIsFetchingUrlImages(false);
     }
@@ -1461,7 +1483,7 @@ Return ONLY this JSON — no markdown:
         .filter((u: string) => typeof u === "string" && u.startsWith("http"))
         .slice(0, 6);
     } catch (e) {
-      console.warn("[fetchAmazonImages]", e);
+      devlog.warn("[fetchAmazonImages]", e);
       return [];
     }
   };
@@ -1487,7 +1509,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         .filter((u: string) => typeof u === "string" && u.startsWith("http"))
         .slice(0, 6);
     } catch (e) {
-      console.warn("[fetchGeminiImages]", e);
+      devlog.warn("[fetchGeminiImages]", e);
       return [];
     }
   };
@@ -1554,7 +1576,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         .slice(0, 6)
         .map(c => c.url);
     } catch (e) {
-      console.warn("[fetchHtmlImages]", e);
+      devlog.warn("[fetchHtmlImages]", e);
       return [];
     }
   };
@@ -1593,8 +1615,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       const ai = getAI(); const angle = strategy.angles[selectedAngleIndex];
       const prompt = `${selectedVoiceTone.toUpperCase()} Pinterest video voiceover (15-30 sec). Product: ${productName}. Angle: ${angle.title}. Psychology: ${angle.psychology}. Headline: ${editableHeadline}. Benefit: ${editableSubtext}. CTA: ${editableCTA}. ${socialProof?.stars?"Stars: "+socialProof.stars:""} Return JSON: { "tone":"${selectedVoiceTone}", "duration":"est read time", "script":"full script with \\n breaks and (pause) markers, 40-80 words", "hooks":["3 alternative opening lines"] }`;
       let r: any;
-      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-3-flash-preview", contents:prompt, config:{responseMimeType:"application/json"} })); }
-      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-flash-latest", contents:prompt, config:{responseMimeType:"application/json"} })); else throw e; }
+      try { r = await withRetry(() => ai.models.generateContent({ model:"gemini-2.0-flash", contents:prompt, config:{responseMimeType:"application/json"} })); }
+      catch (e: any) { if (e.message?.includes("403")) r = await withRetry(() => ai.models.generateContent({ model:"gemini-1.5-flash", contents:prompt, config:{responseMimeType:"application/json"} })); else throw e; }
       setVoiceoverScript(JSON.parse((r as any).text||"{}"));
       setVoiceoverExpanded(true);
     } catch (err: any) { handleApiError(err, "Failed to generate voiceover."); }
@@ -1666,7 +1688,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         } else throw e;
       }
 
-      console.log("[animateImage] operation returned:", JSON.stringify(op));
+      devlog.log("[animateImage] operation returned:", JSON.stringify(op));
       if (!op?.name) throw new Error("No operation name returned from generateVideos. Check API key permissions for Veo.");
 
       // Poll via direct HTTP — works across all SDK versions
@@ -1683,7 +1705,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         await new Promise(r => setTimeout(r, 10000));
         op = await withRetry(() => pollOp(op.name));
         polls++;
-        console.log(`[animateImage] poll ${polls}/60 — done:${op.done}`, op);
+        devlog.log(`[animateImage] poll ${polls}/60 — done:${op.done}`, op);
       }
       if (!op.done) throw new Error("Video generation timed out after 10 minutes. Please try again.");
       if (op.error) throw new Error(op.error?.message || JSON.stringify(op.error));
@@ -1694,7 +1716,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         ?? op.response?.generatedVideos
         ?? [];
       const link = videos[0]?.video?.uri ?? videos[0]?.videoUri ?? videos[0]?.uri;
-      console.log("[animateImage] videos:", JSON.stringify(videos));
+      devlog.log("[animateImage] videos:", JSON.stringify(videos));
       if (link) {
         const res = await fetch(link, { headers: { "x-goog-api-key": apiKey } });
         if (!res.ok) throw new Error(`Video download failed (${res.status})`);
@@ -1720,11 +1742,11 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         setAnimatedVideoUrl(URL.createObjectURL(blob));
         consumeVideo();
       } else {
-        console.error("[animateImage] full op:", JSON.stringify(op));
+        devlog.error("[animateImage] full op:", JSON.stringify(op));
         throw new Error("Video generated but no download URL found. Check console for op shape.");
       }
     } catch (err: any) {
-      console.error("[animateImage] error:", err);
+      devlog.error("[animateImage] error:", err);
       handleApiError(err, `Video failed: ${err?.message || "Unknown error"}`);
     }
     finally { setIsAnimating(false); }
@@ -1768,7 +1790,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         "Aspect ratio 9:16. Continuation only — no jump cuts, no scene resets.",
       ].filter(Boolean).join(" ");
 
-      console.log(`[extendVideo] clip ${clipNum} prompt:`, extendPrompt);
+      devlog.log(`[extendVideo] clip ${clipNum} prompt:`, extendPrompt);
 
       // Pass the ACTUAL previous video bytes so Veo has visual continuity context
       let op: any;
@@ -1784,7 +1806,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
       } catch (e: any) {
         if (e.message?.includes("404") || e.message?.includes("NOT_FOUND") || e.message?.includes("video")) {
           // Fallback: if video input not supported, use product image + strong prompt
-          console.warn("[extendVideo] video input rejected, falling back to image anchor");
+          devlog.warn("[extendVideo] video input rejected, falling back to image anchor");
           const imgSrc = generatedImage || uploadedImage;
           if (!imgSrc) throw e;
           op = await withRetry(() =>
@@ -1798,7 +1820,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         } else throw e;
       }
 
-      console.log("[extendVideo] operation returned:", JSON.stringify(op));
+      devlog.log("[extendVideo] operation returned:", JSON.stringify(op));
       if (!op?.name) throw new Error("No operation name returned from extend generateVideos.");
 
       const pollOp = async (name: string) => {
@@ -1814,7 +1836,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         await new Promise(r => setTimeout(r, 10000));
         op = await withRetry(() => pollOp(op.name));
         polls++;
-        console.log(`[extendVideo] poll ${polls}/60 — done:${op.done}`);
+        devlog.log(`[extendVideo] poll ${polls}/60 — done:${op.done}`);
       }
       if (!op.done) throw new Error("Extension timed out after 10 minutes. Please try again.");
       if (op.error) throw new Error(op.error?.message || JSON.stringify(op.error));
@@ -1841,11 +1863,11 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         setExtendCount(prev => prev + 1);
         consumeVideo();
       } else {
-        console.error("[extendVideo] full op:", JSON.stringify(op));
+        devlog.error("[extendVideo] full op:", JSON.stringify(op));
         throw new Error("Extension complete but no download URL found. Check console.");
       }
     } catch (err: any) {
-      console.error("[extendVideo] error:", err);
+      devlog.error("[extendVideo] error:", err);
       handleApiError(err, `Extension failed: ${err?.message || "Unknown error"}`);
     }
     finally { setIsExtending(false); }
@@ -2789,7 +2811,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <div className="text-center max-w-3xl mx-auto mb-12">
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content — <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
-              {!stripe.ready&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">{stripe.keysPresent?"Keys loaded — click to create price IDs":"Add Stripe keys to .env to activate checkout"}</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">{stripe.keysPresent?"Create Prices":"Setup Stripe"}</button></motion.div>}
+              {!stripe.keysPresent&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">Add Stripe keys to .env to activate checkout</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">Setup Stripe</button></motion.div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
 
@@ -3152,5 +3174,13 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
       <h3 className="font-bold text-slate-800 mb-2">{title}</h3>
       <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
     </div>
+  );
+}
+
+export default function App(){
+  return(
+    <ErrorBoundary>
+      <AppInner/>
+    </ErrorBoundary>
   );
 }
