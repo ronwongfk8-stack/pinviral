@@ -1286,7 +1286,7 @@ Return ONLY a JSON object (no markdown fences):
         try {
           // Primary: urlContext lets Gemini actually browse the page
           r1 = await withRetry(() => ai.models.generateContent({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash",
             contents: [{ role: "user", parts: [{ text: urlStep1Prompt }] }],
             config: { tools: [{ urlContext: {} }] },   // NO responseMimeType — conflicts with urlContext
           }));
