@@ -1025,9 +1025,30 @@ function AppInner() {
   // ── AI helpers ────────────────────────────────────────────────────────────
 
   const getAI = () => {
-    const k = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
+    const k = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") || readEnv("VITE_GEMINI_API_KEY") || readEnv("VITE_API_KEY");
     if (!k) throw new Error("API_KEY_MISSING");
     return new GoogleGenAI({ apiKey: k });
+  };
+
+  // ── Clean URLs — strip tracking params, extract clean product URL ──────────
+  const cleanUrl = (raw: string): string => {
+    try {
+      const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+      // Amazon: keep only /dp/ASIN or /gp/product/ASIN
+      if (/amazon\./i.test(url.hostname)) {
+        const asin = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+        if (asin) return `https://www.amazon.com/dp/${asin[1]}`;
+      }
+      // All others: strip tracking params (utm_*, ref, linkId, etc.)
+      const trackingParams = ["utm_source","utm_medium","utm_campaign","utm_term","utm_content",
+        "ref","linkId","linkCode","tag","ascsubtag","language","psc","th","smid","sr","sp_csd",
+        "fbclid","gclid","msclkid","dclid","_ga","mc_eid","mc_cid","yclid","ttclid"];
+      trackingParams.forEach(p => url.searchParams.delete(p));
+      // If no meaningful params left, return clean path
+      return url.toString();
+    } catch {
+      return raw;
+    }
   };
 
   const handleApiError = (err: any, fallback: string) => {
@@ -1223,7 +1244,7 @@ Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string
       // Extract URL if present in the textarea (could be just a URL, or URL + extra text)
       const urlMatch = inputText.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
       const detectedUrl = urlMatch ? urlMatch[0] : null;
-      const fetchUrl   = detectedUrl ? (detectedUrl.startsWith("http") ? detectedUrl : `https://${detectedUrl}`) : null;
+      const fetchUrl = detectedUrl ? cleanUrl(detectedUrl.startsWith("http") ? detectedUrl : `https://${detectedUrl}`) : null;
 
       // Non-URL portion of the input (if any text besides the URL)
       const textBesideUrl = inputText.replace(detectedUrl || "", "").trim();
@@ -1628,7 +1649,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
     // Resolve API key — prefer .env, fall back to aistudio dialog
-    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
+    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") || readEnv("VITE_GEMINI_API_KEY") || readEnv("VITE_API_KEY");
     if (!apiKey) {
       // Only open the aistudio key picker if there is truly no key anywhere
       if (window.aistudio?.openSelectKey) await window.aistudio.openSelectKey();
@@ -1757,7 +1778,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
     if (extendCount >= MAX_EXTENSIONS) { setError(`Maximum ${MAX_EXTENSIONS} extensions reached. Generate a new video to continue.`); return; }
     if (session.videosLeft <= 0) { setShowUpgradeModal(true); return; }
 
-    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY");
+    const apiKey = readEnv("API_KEY") || readEnv("GEMINI_API_KEY") || readEnv("VITE_GEMINI_API_KEY") || readEnv("VITE_API_KEY");
     if (!apiKey) { setError("No API key found. Add API_KEY to your .env file."); return; }
 
     setIsExtending(true); setError(null);
