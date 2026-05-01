@@ -10,7 +10,7 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "@google/genai": "^0.7.0",
+    "@google/genai": "^1.51.0",
     "@supabase/supabase-js": "^2.104.0",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.11",
