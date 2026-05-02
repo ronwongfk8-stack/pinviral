@@ -1024,13 +1024,16 @@ function AppInner() {
 
   // -- AI helpers ------------------------------------------------------------
 
-  const GEMINI_KEY = "AIzaSyAM-WnRMbDzPcYDiMxyUCdDwFBT87L0dws";
+  const GEMINI_KEY = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => {
+    try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; }
+  })();
 
-const getAI = () => new GoogleGenAI({ apiKey: GEMINI_KEY });
+const getAI = () => new GoogleGenAI({ apiKey: readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })() });
 
 const geminiRest = async (prompt: string, config?: any): Promise<string> => {
+  const key = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })();
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1322,8 +1325,8 @@ Return ONLY a JSON object (no markdown fences):
               setStrategy({ angles: enrichedLean });
               selectAngle(0, enrichedLean[0]);
               // Kick off enrichment in background then return early
-              enrichAngles(leanAngles, resolvedProductName, scrapedContext, ai);
-              generateVariantB(leanAngles[0], resolvedProductName, ai);
+              enrichAngles(leanAngles, resolvedProductName, scrapedContext, getAI());
+              generateVariantB(leanAngles[0], resolvedProductName, getAI());
               return;
             }
           }
@@ -1382,8 +1385,8 @@ Return ONLY a JSON object (no markdown fences):
       })) });
       selectAngle(0, leanAngles[0]);
 
-      enrichAngles(leanAngles, resolvedProductName, scrapedContext, ai);
-      generateVariantB(leanAngles[0], resolvedProductName, ai);
+      enrichAngles(leanAngles, resolvedProductName, scrapedContext, getAI());
+      generateVariantB(leanAngles[0], resolvedProductName, getAI());
 
     } catch (err: any) { handleApiError(err, "Failed to generate strategy. Check your API key and try again."); }
     finally { setIsLoading(false); }
@@ -1395,7 +1398,7 @@ Return ONLY a JSON object (no markdown fences):
       const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
       const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] � unchanged � placed in [50-80 word scene]..." } ...5 total ] }`;
       const imageAnalysisRes = await withRetry(() => fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${(readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })())}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1432,7 +1435,7 @@ Return ONLY a JSON object (no markdown fences):
 
       const spBody: any = { contents: [{ parts }], generationConfig: { responseMimeType: "application/json" } };
       const spRes = await withRetry(() => fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${(readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })())}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spBody) }
       ).then(r => r.json()));
       const raw = spRes.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
