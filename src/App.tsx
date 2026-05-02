@@ -1031,22 +1031,13 @@ function AppInner() {
 const getAI = () => new GoogleGenAI({ apiKey: readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })() });
 
 const geminiRest = async (prompt: string, config?: any): Promise<string> => {
-  const key = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || (() => { try { return localStorage.getItem("pinviral_gemini_key") || ""; } catch { return ""; } })();
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${key}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: config?.responseMimeType === "application/json"
-          ? { responseMimeType: "application/json" } : undefined,
-      }),
-    }
-  );
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `Gemini error ${res.status}`);
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const ai = getAI();
+  const r = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: prompt,
+    config: config?.responseMimeType ? { responseMimeType: config.responseMimeType } : undefined,
+  });
+  return (r as any).text || "";
 };
 
   // -- Clean URLs � strip tracking params, extract clean product URL ----------
@@ -3210,3 +3201,4 @@ export default function App(){
     </ErrorBoundary>
   );
 }
+
