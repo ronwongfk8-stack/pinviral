@@ -1,33 +1,12 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install --legacy-peer-deps",
   "framework": "vite",
-  "env": {
-    "NODE_ENV": "development"
-  },
-  "functions": {
-    "checkout.ts": { "runtime": "@vercel/node" },
-    "setup-stripe.ts": { "runtime": "@vercel/node" }
-  },
   "rewrites": [
-    { "source": "/api/checkout", "destination": "/checkout.ts" },
-    { "source": "/api/setup-stripe", "destination": "/setup-stripe.ts" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
-    {
-      "source": "/assets/(.*).css",
-      "headers": [
-        { "key": "Content-Type", "value": "text/css" }
-      ]
-    },
-    {
-      "source": "/assets/(.*).js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript" }
-      ]
-    },
     {
       "source": "/assets/(.*)",
       "headers": [
