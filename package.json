@@ -12,6 +12,7 @@
   "dependencies": {
     "@google/genai": "^1.51.0",
     "@supabase/supabase-js": "^2.104.0",
+    "@vercel/node": "^5.7.15",
     "clsx": "^2.1.1",
     "html-to-image": "^1.11.11",
     "lucide-react": "^0.383.0",
