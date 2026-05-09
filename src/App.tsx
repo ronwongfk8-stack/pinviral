@@ -377,6 +377,23 @@ const defaultSession = (): UserSession => ({
   topupHistory: [],
 });
 
+// -- Stripe direct helper (client-side price auto-creation only) --------------
+async function stripePost(secretKey: string, endpoint: string, body: Record<string, string>): Promise<any> {
+  const params = new URLSearchParams();
+  Object.entries(body).forEach(([k, v]) => params.append(k, v));
+  const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: params.toString(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe error on ${endpoint}`);
+  return data;
+}
+
 // -- Stripe via backend API (/api/checkout) — secret key never in browser ----
 
 async function createCheckoutSession(params: {
@@ -915,7 +932,7 @@ function AppInner() {
     try {
       // Get the priceId from our stored stripe prices
       const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      const priceId  = stripe.priceIds?.[priceKey as keyof StripePriceIds] || stripe.priceIds?.[planKey as keyof StripePriceIds];
 
       if (!priceId) {
         throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
@@ -970,22 +987,38 @@ function AppInner() {
     setCreationError(null);
     const log = (msg: string) => setCreationLog(p => [...p, msg]);
     try {
-      log("Creating Stripe products and prices via server...");
+      // Step 1: try to fetch existing prices first (fast, no creation needed)
+      log("Checking for existing Stripe prices...");
+      const getRes = await fetch("/api/setup-stripe", { method: "GET" });
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        const count = Object.keys(getData.priceIds || {}).length;
+        if (count >= 13) {
+          log(`✅ Found ${count} existing prices — no need to recreate!`);
+          setStripe(prev => ({ ...prev, priceIds: getData.priceIds, ready: true }));
+          try { localStorage.setItem("pinviral_prices", JSON.stringify(getData.priceIds)); } catch {}
+          return;
+        }
+        if (count > 0) {
+          log(`Found ${count}/13 prices — creating the rest...`);
+        } else {
+          log("No existing prices found — creating all 13...");
+        }
+      }
+
+      // Step 2: create missing prices
       const res = await fetch("/api/setup-stripe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Setup failed");
+      const data = await res.json().catch(() => ({ error: "Server returned empty response — check Vercel function logs" }));
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       log("✅ All prices created successfully!");
       if (data.priceIds) {
-        setStripe(prev => ({
-          ...prev,
-          priceIds: data.priceIds,
-          ready: true,
-        }));
+        setStripe(prev => ({ ...prev, priceIds: data.priceIds, ready: true }));
         try { localStorage.setItem("pinviral_prices", JSON.stringify(data.priceIds)); } catch {}
       }
+      (data.log || []).forEach((l: string) => log(l));
     } catch (err: any) {
       setCreationError(err.message);
       log("❌ Error: " + err.message);
