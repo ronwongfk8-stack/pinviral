@@ -50,7 +50,7 @@ async function stripeGet(endpoint: string) {
   return data;
 }
 
-export const config = { api: { bodyParser: false } }; // need raw body for signature
+export const config = { runtime: "nodejs", api: { bodyParser: false } };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
