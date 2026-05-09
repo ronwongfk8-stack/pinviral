@@ -86,6 +86,7 @@ type VoiceTone = "energetic" | "calm" | "luxury" | "trendy" | "asmr";
 
 // -- SaaS session (persisted to localStorage) ----------------------------------
 interface UserSession {
+  id?: string;                   // Supabase user UUID
   plan: string;                  // "free" | "starter" | "pro" | "scale" | "agency"
   billing: "monthly" | "annual";
   imagesLeft: number;
@@ -377,23 +378,6 @@ const defaultSession = (): UserSession => ({
   topupHistory: [],
 });
 
-// -- Stripe direct helper (client-side price auto-creation only) --------------
-async function stripePost(secretKey: string, endpoint: string, body: Record<string, string>): Promise<any> {
-  const params = new URLSearchParams();
-  Object.entries(body).forEach(([k, v]) => params.append(k, v));
-  const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${secretKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params.toString(),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe error on ${endpoint}`);
-  return data;
-}
-
 // -- Stripe via backend API (/api/checkout) — secret key never in browser ----
 
 async function createCheckoutSession(params: {
@@ -474,6 +458,7 @@ function AppInner() {
   const [isFetchingUrlImages, setIsFetchingUrlImages]       = useState(false);
   const [selectedUrlImageIndex, setSelectedUrlImageIndex]   = useState<number | null>(null);
   const [inputWasUrl, setInputWasUrl]                       = useState(false);
+  const [extensionPrompt, setExtensionPrompt]             = useState("");
   const [animatedVideoUrl, setAnimatedVideoUrl]             = useState<string | null>(null);
   const [videoMimeType, setVideoMimeType]                   = useState<string>("video/mp4");
   const [showExtendModal, setShowExtendModal]               = useState(false);
@@ -932,7 +917,7 @@ function AppInner() {
     try {
       // Get the priceId from our stored stripe prices
       const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.priceIds?.[priceKey as keyof StripePriceIds] || stripe.priceIds?.[planKey as keyof StripePriceIds];
+      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
 
       if (!priceId) {
         throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
@@ -1732,21 +1717,21 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy && selectedAngleIndex !== null ? strategy.angles[selectedAngleIndex].psychology : "professional lifestyle photography"}.`;
 
       // -- Image generation via /api/image (server-side) --
-    const imgPayload: any = { prompt: fullPrompt, userId: session?.id };
-    if (uploadedImage?.startsWith("data:")) {
-      imgPayload.imageB64  = uploadedImage.split(",")[1];
-      imgPayload.imageMime = uploadedImage.split(";")[0].split(":")[1];
-    }
-    const imgApiRes = await fetch("/api/image", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(imgPayload),
-    });
-    const imgApiData = await imgApiRes.json();
-    if (!imgApiRes.ok) throw new Error(imgApiData?.error || "Image generation failed");
-    imageB64 = imgApiData.imageB64 || null;
-    if (!imageB64) throw new Error("No image returned. Please try again.");
-      setGeneratedImage(`data:image/png;base64,${imageB64}`);
+      const imgPayload: any = { prompt: fullPrompt, userId: session?.id };
+      if (uploadedImage?.startsWith("data:")) {
+        imgPayload.imageB64  = uploadedImage.split(",")[1];
+        imgPayload.imageMime = uploadedImage.split(";")[0].split(":")[1];
+      }
+      const imgApiRes = await fetch("/api/image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(imgPayload),
+      });
+      const imgApiData = await imgApiRes.json();
+      if (!imgApiRes.ok) throw new Error(imgApiData?.error || "Image generation failed");
+      const resultB64 = imgApiData.imageB64 || null;
+      if (!resultB64) throw new Error("No image returned. Please try again.");
+      setGeneratedImage(`data:image/png;base64,${resultB64}`);
       consumeImage();
     } catch (err: any) { handleApiError(err, "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
@@ -2975,78 +2960,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
         </motion.div>
       )}</AnimatePresence>
 
-      {/* -- API Key Setup Modal ------------------------------------------------ */}
-      <AnimatePresence>{showApiKeyModal&&(
-        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <motion.div initial={{opacity:0,scale:0.92}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:0.92}}
-            className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full p-8 space-y-6">
-            <div className="text-center space-y-2">
-              <div className="w-14 h-14 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto">
-                <Key size={28} className="text-rose-600"/>
-              </div>
-              <h2 className="text-2xl font-black text-slate-900">Add Your Gemini API Key</h2>
-              <p className="text-slate-500 text-sm leading-relaxed">
-                PinViral uses Google's Gemini AI. You need a free API key to generate strategies and images.
-              </p>
-            </div>
-
-            <div className="bg-slate-50 rounded-2xl p-4 space-y-2 border border-slate-100">
-              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">How to get your key (free):</p>
-              <ol className="text-sm text-slate-600 space-y-1 list-decimal list-inside">
-                <li>Go to <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-rose-600 font-bold underline">aistudio.google.com/apikey</a></li>
-                <li>Click <strong>"Create API key"</strong></li>
-                <li>Copy the key (starts with <code className="bg-slate-200 px-1 rounded text-xs">AIza</code>)</li>
-                <li>Paste it below</li>
-              </ol>
-            </div>
-
-            <div className="space-y-3">
-              <input
-                type="password"
-                placeholder="AIzaSy..."
-                value={apiKeyInput}
-                onChange={e=>{ setApiKeyInput(e.target.value); setApiKeyError(""); }}
-                onKeyDown={e=>{ if(e.key==="Enter") testAndSaveKey(apiKeyInput); }}
-                className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-800 font-mono text-sm focus:ring-2 focus:ring-rose-500 focus:border-rose-500 outline-none transition-all"
-                autoFocus
-              />
-              {apiKeyError && (
-                <div className="flex items-start gap-2 text-rose-600 text-xs font-medium bg-rose-50 p-3 rounded-xl border border-rose-100">
-                  <AlertCircle size={14} className="shrink-0 mt-0.5"/>
-                  <span>{apiKeyError}</span>
-                </div>
-              )}
-              {geminiKey && (
-                <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                  <Check size={14}/>
-                  <span>Saved key: {geminiKey.slice(0,8)}...{geminiKey.slice(-4)}</span>
-                  <button onClick={()=>{ clearGeminiKey(); setGeminiKey(""); }} className="ml-auto text-slate-400 hover:text-red-500 transition-colors text-[10px] font-black uppercase">Remove</button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={()=>testAndSaveKey(apiKeyInput)}
-                disabled={apiKeyTesting || !apiKeyInput.trim()}
-                className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-100"
-              >
-                {apiKeyTesting ? <><Loader2 size={18} className="animate-spin"/>Testing key...</> : <>Save & Continue →</>}
-              </button>
-              {geminiKey && (
-                <button onClick={()=>setShowApiKeyModal(false)}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl transition-all text-sm">
-                  Use existing key
-                </button>
-              )}
-            </div>
-
-            <p className="text-center text-[10px] text-slate-400 leading-relaxed">
-              Your key is stored only in your browser (localStorage). It is never sent to our servers.
-            </p>
-          </motion.div>
-        </div>
-      )}</AnimatePresence>
+      
 
       {/* -- Animation overlay with progress */}
       <AnimatePresence>{(isAnimating||isExtending)&&(
