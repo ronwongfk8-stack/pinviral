@@ -6,8 +6,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { db, PLAN_DEFS, TOPUP_PACKS, getUserByStripeCustomer, getUserByStripeSubscription } from "../lib/db";
 
-const STRIPE_SK             = process.env.STRIPE_SECRET_KEY!;
-const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET!;
+const STRIPE_SK             = process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY!;
+const STRIPE_WEBHOOK_SECRET = (process.env.STRIPE_WEBHOOK_SECRET || process.env.VITE_STRIPE_WEBHOOK_SECRET || process.env.VITE_STRIPE_WEBHOOK_SECRET)!;
 
 // Minimal Stripe signature verification without the Stripe SDK
 async function verifyStripeSignature(

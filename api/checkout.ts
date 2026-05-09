@@ -10,7 +10,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const config = { runtime: "nodejs" };
 
-const SK = process.env.STRIPE_SECRET_KEY!;
+const SK = process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY!;
 
 async function stripePost(endpoint: string, params: Record<string, string>) {
   const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
