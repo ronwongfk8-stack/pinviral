@@ -2201,14 +2201,6 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
-            {/* API Key status button */}
-            <button onClick={()=>{ setApiKeyInput(""); setApiKeyError(""); setShowApiKeyModal(true); }}
-              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                geminiKey ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                           : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 animate-pulse")}>
-              <Key size={12}/>{geminiKey ? "AI Key ✓" : "Add API Key ⚠"}
-            </button>
-
             {/* Stripe status */}
             {stripeStatus !== "live" && (
             <button onClick={()=>setShowStripeSetup(true)}
