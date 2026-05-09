@@ -1,5 +1,15 @@
 ﻿{
-  "buildCommand": "npx vite build",
+  "buildCommand": "tsc && vite build",
   "outputDirectory": "dist",
-  "installCommand": "npm install --legacy-peer-deps"
+  "installCommand": "npm install",
+  "framework": null,
+  "functions": {
+    "api/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)",     "destination": "/index.html" }
+  ]
 }
