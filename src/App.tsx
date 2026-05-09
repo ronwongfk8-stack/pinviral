@@ -916,11 +916,12 @@ function AppInner() {
     setError(null);
     try {
       // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
+      const priceId  = stripe.priceIds?.[priceKey as keyof StripePriceIds]
+                    || stripe.priceIds?.[planKey as keyof StripePriceIds];
 
       if (!priceId) {
-        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
+        throw new Error(`Price not found for "${priceKey}". Open Stripe setup and click Auto-Create.`);
       }
 
       const url = await createCheckoutSession({
