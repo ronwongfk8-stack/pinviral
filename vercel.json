@@ -6,7 +6,13 @@
   "env": {
     "NODE_ENV": "development"
   },
+  "functions": {
+    "checkout.ts": { "runtime": "@vercel/node" },
+    "setup-stripe.ts": { "runtime": "@vercel/node" }
+  },
   "rewrites": [
+    { "source": "/api/checkout", "destination": "/checkout.ts" },
+    { "source": "/api/setup-stripe", "destination": "/setup-stripe.ts" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
