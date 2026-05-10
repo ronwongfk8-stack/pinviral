@@ -917,26 +917,19 @@ function AppInner() {
     try {
       // Get the priceId from our stored stripe prices
       const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
-      const priceId  = (stripe.priceIds as any)?.[priceKey]
-                    || (stripe.priceIds as any)?.[planKey];
+      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey] || (stripe.priceIds as any)?.[planKey];
 
       if (!priceId) {
-        // Try fetching fresh from server before giving up
         try {
           const r = await fetch("/api/setup-stripe", { method: "GET" });
           if (r.ok) {
             const d = await r.json();
-            const freshId = d.priceIds?.[priceKey] || d.priceIds?.[planKey];
-            if (freshId) {
-              setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
-              const url = await createCheckoutSession({ priceId: freshId, planKey, billing, topupKey, email: session?.email });
-              window.location.href = url;
-              return;
-            }
+            priceId = d.priceIds?.[priceKey] || d.priceIds?.[planKey];
+            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
           }
         } catch {}
-        throw new Error("Price not found. Please contact support.");
       }
+      if (!priceId) throw new Error("Price not found. Please contact support.");
 
       const url = await createCheckoutSession({
         priceId,
@@ -2215,14 +2208,267 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
-              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
-                "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="partial"?"Stripe ✓":"Setup Stripe"}
-            </button>
+            {/* Stripe info */}
+            <div className={cn("flex items-center gap-3 p-3 rounded-2xl border text-xs font-medium",
+              stripeStatus==="live"?"bg-emerald-50 border-emerald-200 text-emerald-700":
+              stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700":
+              "bg-slate-50 border-slate-200 text-slate-500")}>
+              <CreditCard size={15}/>
+              {stripeStatus==="live" ? `Stripe connected · ${"Connected"} · All prices ready` :
+               stripeStatus==="partial" ? "Stripe keys found · prices needed" :
+               <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
+            </div>
+
+            {/* Cancel subscription */}
+            {session.plan !== "free" && session.stripeSubscriptionId && (
+              <div className="border-t border-slate-100 pt-4 space-y-2">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subscription</p>
+                {!showCancelConfirm ? (
+                  <button onClick={()=>setShowCancelConfirm(true)}
+                    className="w-full py-2.5 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-2xl transition-all border border-rose-100">
+                    Cancel Subscription
+                  </button>
+                ) : (
+                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-rose-800">Cancel your {session.plan} plan?</p>
+                    <p className="text-[11px] text-rose-600 leading-relaxed">You'll keep access until end of billing period. No further charges.</p>
+                    <div className="flex gap-2">
+                      <button onClick={()=>setShowCancelConfirm(false)} className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl text-xs">Keep Plan</button>
+                      <button onClick={async()=>{
+                        setIsCancelling(true);
+                        try {
+                          const r = await fetch("/api/checkout", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "cancel", subscriptionId: session.stripeSubscriptionId }),
+              });
+                          if(r.ok){showToast("success","Cancelled. Access continues until period end.");setShowCancelConfirm(false);}
+                          else showToast("error","Failed. Email support@pinviral.ai");
+                        } catch{showToast("error","Failed. Email support@pinviral.ai");}
+                        finally{setIsCancelling(false);}
+                      }} disabled={isCancelling}
+                        className="flex-1 py-2 bg-rose-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-1 disabled:opacity-50">
+                        {isCancelling&&<Loader2 size={11} className="animate-spin"/>}{isCancelling?"...":"Yes, Cancel"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
-            {/* Account button */}
+            {/* Export + Delete */}
+            <div className="border-t border-slate-100 pt-4 space-y-2">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data & Privacy</p>
+              <button onClick={()=>{
+                const data={session:JSON.parse(localStorage.getItem("pinviral_session_v2")||"{}"),consent:localStorage.getItem("_pv_consent_v2"),exportedAt:new Date().toISOString()};
+                const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+                const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="pinviral-data-export.json";a.click();URL.revokeObjectURL(url);
+              }} className="w-full py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center gap-2">
+                <Download size={12}/>Export My Data
+              </button>
+              <button onClick={()=>{if(confirm("Delete your account? This clears all local data. Subscription refunds need to be requested via email.")){localStorage.clear();indexedDB.deleteDatabase("_pvs");window.location.reload();}}}
+                className="w-full py-2.5 text-xs font-bold text-red-400 hover:bg-red-50 rounded-2xl border border-red-100 flex items-center justify-center gap-2">
+                <Trash2 size={12}/>Delete Account & Data
+              </button>
+            </div>
+
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
+  // -- Upgrade Modal ? opens Pricing Modal ----------------------------------
+  const UpgradeModal = () => {
+    useEffect(() => {
+      setShowUpgradeModal(false);
+      setShowPricingModal(true);
+    }, []);
+    return null;
+  };
+
+  // -- Pricing Modal ---------------------------------------------------------
+  const PricingModal = () => {
+    const [billingCycle, setBillingCycle] = useState<"monthly"|"annual">("monthly");
+    return (
+      <div className="fixed inset-0 z-[135] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
+        <motion.div initial={{opacity:0,y:40}} animate={{opacity:1,y:0}} exit={{opacity:0,y:40}}
+          className="bg-white w-full sm:max-w-lg rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+          {/* Header */}
+          <div className="bg-gradient-to-br from-rose-600 to-rose-700 p-6 text-white shrink-0">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center"><Crown size={16}/></div>
+                <h3 className="font-black text-xl">Upgrade PinViral</h3>
+              </div>
+              <button onClick={()=>setShowPricingModal(false)} className="w-7 h-7 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all"><X size={14}/></button>
+            </div>
+            {/* Billing toggle */}
+            <div className="flex gap-1 bg-white/10 rounded-2xl p-1 w-fit">
+              {(["monthly","annual"] as const).map(b=>(
+                <button key={b} onClick={()=>setBillingCycle(b)}
+                  className={cn("px-4 py-1.5 rounded-xl text-xs font-black transition-all",billingCycle===b?"bg-white text-rose-600":"text-white/70 hover:text-white")}>
+                  {b==="monthly"?"Monthly":"Annual · Save 30%"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Plans */}
+          <div className="overflow-y-auto p-4 space-y-3">
+            {(["starter","pro","scale"] as const).map(key=>{
+              const p=PLAN_DEFS[key]; const isPopular=p.popular; const price=billingCycle==="annual"?p.annual:p.monthly;
+              const lk=checkoutLoading===`${key}_${billingCycle}`;
+              return (
+                <button key={key} onClick={()=>startCheckout(key,billingCycle)} disabled={!!checkoutLoading||session.plan===key}
+                  className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.01] disabled:opacity-60 relative",
+                    isPopular?"border-rose-400 bg-rose-50":"border-slate-100 hover:border-rose-200 bg-white")}>
+                  {isPopular&&<span className="absolute top-3 right-3 text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Popular</span>}
+                  {session.plan===key&&<span className="absolute top-3 right-3 text-[9px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Current</span>}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <p className="font-black text-slate-900">{p.emoji} {key.charAt(0).toUpperCase()+key.slice(1)}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{p.images} images · {p.videos} videos/mo</p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {p.features.slice(0,3).map((f:string)=><span key={f} className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{f}</span>)}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-black text-rose-600 text-xl">${price}</p>
+                      <p className="text-[9px] text-slate-400">/mo</p>
+                      {lk&&<Loader2 size={13} className="animate-spin text-rose-400 mx-auto mt-1"/>}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+            {/* Top-ups */}
+            <div className="pt-2">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">One-Time Top-Ups</p>
+              <div className="grid grid-cols-2 gap-2">
+                {TOPUP_PACKS.map((p:any)=>{
+                  const lk=checkoutLoading===p.key;
+                  return (
+                    <button key={p.key} onClick={()=>startCheckout("topup","monthly",p.key)} disabled={!!checkoutLoading}
+                      className={cn("p-3 rounded-2xl border text-left transition-all hover:scale-[1.02] disabled:opacity-60",p.highlight?"border-rose-200 bg-rose-50":"border-slate-100 hover:border-rose-200 bg-white")}>
+                      <p className="text-xs font-black text-slate-700">{p.label}</p>
+                      <p className="text-sm font-black text-rose-600 mt-0.5">${p.price} {lk&&<Loader2 size={11} className="animate-spin inline ml-1"/>}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe · Cancel anytime</p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
+  // -- Stripe Setup Modal ----------------------------------------------------
+
+  const StripeSetupModal = () => {
+    const envHasKeys = !!(readEnv("STRIPE_SECRET_KEY") || readEnv("STRIPE_PUBLISHABLE_KEY"));
+    const priceCount = Object.keys(stripe.priceIds).length;
+    return (
+      <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <motion.div initial={{opacity:0,scale:0.95}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:0.95}}
+          className="bg-white rounded-[2rem] shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white sticky top-0 z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">{"✅ Connected"} · Auto-reads from .env</p></div></div>
+              <button onClick={()=>setShowStripeSetup(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={17}/></button>
+            </div>
+          </div>
+          <div className="p-6 space-y-5">
+            {/* Status cards */}
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                {label:"Secret Key", ok:!!stripe.secretKey,      hint: stripe.secretKey ? "loaded ✅" : "paste below"},
+                {label:"Pub Key",    ok:!!stripe.publishableKey, hint: stripe.publishableKey ? "loaded ✅" : "paste below"},
+                {label:"Price IDs",  ok:priceCount===13,          hint:`${priceCount}/13`}
+              ].map(s=>(
+                <div key={s.label} className={cn("flex flex-col items-center gap-1 p-3 rounded-2xl border text-center",s.ok?"bg-emerald-50 border-emerald-200":"bg-amber-50 border-amber-200")}>
+                  {s.ok?<CheckCircle2 size={17} className="text-emerald-500"/>:<AlertCircle size={17} className="text-amber-500"/>}
+                  <p className="text-[10px] font-black text-slate-700">{s.label}</p>
+                  <p className="text-[9px] text-slate-400">{s.hint}</p>
+                </div>
+              ))}
+            </div>
+
+            {envHasKeys&&stripe.secretKey&&<div className="flex items-start gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><ShieldCheck size={16} className="text-emerald-600 mt-0.5 shrink-0"/><div><p className="text-sm font-bold text-emerald-800">Stripe keys auto-loaded from .env ✅</p><p className="text-xs text-emerald-700 mt-0.5">Your <code className="bg-emerald-100 px-1 rounded">STRIPE_SECRET_KEY</code> and <code className="bg-emerald-100 px-1 rounded">STRIPE_PUBLISHABLE_KEY</code> were detected automatically.</p></div></div>}
+
+            {/* Always show key inputs · SK can't be read client-side without VITE_ prefix */}
+            {!stripe.secretKey && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-200">
+                <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0"/>
+                <p className="text-sm text-amber-700">Stripe Secret Key not accessible in browser. Paste it below once · it's stored locally and never sent anywhere except Stripe's API directly.</p>
+              </div>
+            )}
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secret Key <span className="normal-case font-normal text-slate-300">(sk_test_... · stored locally)</span></label>
+                <input type="password" placeholder="sk_test_..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-slate-400 outline-none" value={manualSk} onChange={e=>setManualSk(e.target.value)}/>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publishable Key <span className="normal-case font-normal text-slate-300">(pk_test_...)</span></label>
+                <input type="text" placeholder="pk_test_..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-slate-400 outline-none" value={manualPk} onChange={e=>setManualPk(e.target.value)}/>
+              </div>
+              <button onClick={saveManualKeys} disabled={!manualSk||!manualPk} className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"><Check size={14}/>{stripe.keysPresent ? "Update Keys" : "Save Keys"}</button>
+            </div>
+
+            {stripe.keysPresent && priceCount < 13 && (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-200"><AlertCircle size={15} className="text-rose-600 mt-0.5 shrink-0"/><div><p className="text-sm font-black text-rose-800">? {13-priceCount} Price ID{13-priceCount>1?"s":""} Missing · Checkout Won't Work</p><p className="text-xs text-rose-700 mt-1">Click the button below to auto-create all missing prices in your Stripe account. This only takes a few seconds.</p></div></div>
+                <button onClick={autoCreatePrices} disabled={isCreatingPrices} className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-100 transition-all hover:scale-[1.01]">{isCreatingPrices?<><Loader2 className="animate-spin" size={16}/>Creating prices in Stripe...</>:<><CreditCard size={16}/>Auto-Create All {13-priceCount} Missing Prices</>}</button>
+              </div>
+            )}
+            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active · checkout is live ✅</p></div>}
+
+            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("=···")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  ✅")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">G··</p>}</div>}
+            {creationError&&<div className="flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={13} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{creationError}</p></div>}
+          </div>
+        </motion.div>
+      </div>
+    );
+  };
+
+  // -- Render ----------------------------------------------------------------
+
+  return (
+    <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-rose-100 selection:text-rose-600">
+
+      {/* Toast */}
+      <AnimatePresence>
+        {paymentToast && (
+          <motion.div initial={{opacity:0,y:-60}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-60}}
+            className={cn("fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-white max-w-md w-full mx-4",
+              paymentToast.type==="success"?"bg-emerald-600":"bg-rose-600")}>
+            {paymentToast.type==="success"?<CheckCircle2 size={20}/>:<AlertCircle size={20}/>}
+            <p className="font-bold text-sm">{paymentToast.message}</p>
+            <button onClick={()=>setPaymentToast(null)} className="ml-auto opacity-70 hover:opacity-100"><X size={15}/></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
+        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 bg-rose-600 rounded-lg flex items-center justify-center text-white"><Sparkles size={17}/></div>
+            <h1 className="font-bold text-xl tracking-tight">PinViral</h1>
+            {session.plan!=="free"&&<span className={cn("hidden sm:flex items-center gap-1 px-2.5 py-1 text-[10px] font-black rounded-full uppercase tracking-tight",session.plan==="pro"?"bg-rose-100 text-rose-700":"bg-violet-100 text-violet-700")}><Crown size={9}/>{session.plan}</span>}
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Quotas */}
+            <div className="hidden sm:flex flex-col gap-1 min-w-[128px]">
+              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><ImageIcon size={9}/>Images</span><span className={session.imagesLeft<=2?"text-rose-600 animate-pulse":""}>{session.imagesLeft} left</span></div>
+              <QuotaBar used={(session.imagesTotal||3)-session.imagesLeft} total={session.imagesTotal||3} color="bg-rose-500"/>
+              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5"><span className="flex items-center gap-1"><Video size={9}/>Videos</span><span className={session.videosLeft<=0&&session.plan!=="free"?"text-indigo-600 animate-pulse":""}>{session.videosLeft} left</span></div>
+              <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
+            </div>
+
+                        {/* Account button */}
             <button onClick={()=>setShowAccountModal(true)}
               className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
               <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-white"><User size={12}/></div>
@@ -2627,6 +2873,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <div className="text-center max-w-3xl mx-auto mb-12">
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content · <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
+              {!stripe.keysPresent&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">Add Stripe keys to .env to activate checkout</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">Setup Stripe</button></motion.div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
 
