@@ -916,12 +916,11 @@ function AppInner() {
     setError(null);
     try {
       // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
-      const priceId  = stripe.priceIds?.[priceKey as keyof StripePriceIds]
-                    || stripe.priceIds?.[planKey as keyof StripePriceIds];
+      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
+      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
 
       if (!priceId) {
-        throw new Error(`Price not found for "${priceKey}". Open Stripe setup and click Auto-Create.`);
+        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
       }
 
       const url = await createCheckoutSession({
@@ -2201,6 +2200,14 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
+            {/* API Key status button */}
+            <button onClick={()=>{ setApiKeyInput(""); setApiKeyError(""); setShowApiKeyModal(true); }}
+              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
+                geminiKey ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                           : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 animate-pulse")}>
+              <Key size={12}/>{geminiKey ? "AI Key ✓" : "Add API Key ⚠"}
+            </button>
+
             {/* Stripe status */}
             {stripeStatus !== "live" && (
             <button onClick={()=>setShowStripeSetup(true)}
@@ -2307,54 +2314,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                       </div>
                     </div>
 
-                    {/* Product URL — social proof only (no image import) */}
-                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 space-y-3">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Product URL <span className="text-slate-300 font-medium normal-case">(optional)</span></p>
-                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
-                          Paste your product URL to pull star ratings &amp; review counts onto your pin.
-                        </p>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-300">
-                            <ExternalLink size={13}/>
-                          </div>
-                          <input
-                            type="text"
-                            placeholder="amazon.com/... or shop.com/product/..."
-                            className="w-full pl-8 pr-16 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-rose-400 outline-none transition-all"
-                            value={productUrl}
-                            onChange={e => setProductUrl(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter" && productUrl.trim()) {
-                                const u = productUrl.startsWith("http") ? productUrl : `https://${productUrl}`;
-                                fetchSocialProof(null, u);
-                                setProductUrl(u);
-                              }
-                            }}
-                          />
-                          {isAnalyzingSocialProof ? (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                              <Loader2 size={13} className="animate-spin text-rose-500"/>
-                            </div>
-                          ) : productUrl.trim() ? (
-                            <button
-                              onClick={() => {
-                                const u = productUrl.startsWith("http") ? productUrl : `https://${productUrl}`;
-                                fetchSocialProof(null, u);
-                                setProductUrl(u);
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-rose-600 text-white text-[10px] font-black rounded-lg hover:bg-rose-700 transition-colors">
-                              Fetch
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      {socialProof && (
-                        <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100">
-                          <Check size={12}/>Social proof added to pin
-                        </div>
-                      )}
-                    </div>
+
 
                     {/* Environment selector */}
                     <AnimatePresence>
@@ -2849,7 +2809,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                 <h3 className="text-xl font-black text-slate-900">Welcome to PinViral</h3>
                 <p className="text-slate-500 text-sm leading-relaxed">Create viral Pinterest pins with AI in 3 steps. Let's walk you through it.</p>
                 <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-2">
-                  <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center text-white text-[10px] font-black">1</div><span className="text-slate-600 font-medium">Paste your product URL or name</span></div>
+                  <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center text-white text-[10px] font-black">1</div><span className="text-slate-600 font-medium">Type your product name</span></div>
                   <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 text-[10px] font-black">2</div><span className="text-slate-400">We'll analyze & generate viral angles</span></div>
                   <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 text-[10px] font-black">3</div><span className="text-slate-400">Pick an angle ? Generate your pin</span></div>
                 </div>
