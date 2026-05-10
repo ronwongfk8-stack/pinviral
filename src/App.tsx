@@ -123,11 +123,30 @@ interface StripeRuntime {
 try { localStorage.removeItem("pinviral_gemini_key"); } catch {}
 
 function readEnv(key: string): string {
-  // Reads frontend-safe env vars — tries both VITE_ prefix and bare name
-  try {
-    const e = (import.meta as any).env as Record<string, string>;
-    return e["VITE_" + key] || e[key] || "";
-  } catch { return ""; }
+  // Vite (Vercel) exposes VITE_ vars via import.meta.env
+  const vite = (typeof import.meta !== "undefined" && (import.meta as any).env)
+    ? (import.meta as any).env as Record<string, string>
+    : {} as Record<string, string>;
+  // process.env fallback for AI Studio / Node / CRA
+  const e = (typeof process !== "undefined" ? process.env : {}) as Record<string, string>;
+
+  // localStorage override — user-pasted key always wins for GEMINI_API_KEY / API_KEY
+  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && typeof localStorage !== "undefined") {
+    const stored = localStorage.getItem("_pv_gemini_key") || "";
+    if (stored && stored.startsWith("AIza")) return stored;
+  }
+
+  const raw = (
+    vite[`VITE_${key}`]   ||
+    vite[key]             ||
+    e[key]                ||
+    e[`VITE_${key}`]      ||
+    e[`REACT_APP_${key}`] ||
+    ""
+  );
+  // Reject anything that is not a real Gemini API key (starts with AIza)
+  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && raw && !raw.startsWith("AIza")) return "";
+  return raw;
 }
 
 // Save / clear user-provided Gemini key
@@ -663,29 +682,45 @@ function AppInner() {
     if (merged.publishableKey) setManualPk(merged.publishableKey);
 
     // -- Auto-create prices silently if keys present but prices missing --------
-    if (!merged.ready) {
-      // Auto-fetch price IDs from server on load
+    if (merged.keysPresent && !merged.ready) {
       setTimeout(async () => {
+        // Use merged directly · avoids stale closure on stripe state
+        const sk = merged.secretKey;
+        if (!sk) return;
         try {
-          const r = await fetch("/api/setup-stripe", { method: "GET" });
-          if (r.ok) {
-            const d = await r.json();
-            const count = Object.keys(d.priceIds || {}).length;
-            if (count > 0) {
-              setStripe(prev => ({
-                ...prev,
-                priceIds: { ...prev.priceIds, ...d.priceIds },
-                ready: count >= 13,
-                keysPresent: true,
-              }));
-              try { localStorage.setItem("pinviral_prices", JSON.stringify(d.priceIds)); } catch {}
-            }
+          const newIds: Record<string, string> = { ...merged.priceIds };
+          const plans = [
+            { key:"starter", name:"PinViral Starter", monthly:2900,  annual:24000  },
+            { key:"pro",     name:"PinViral Pro",     monthly:5900,  annual:49200  },
+            { key:"scale",   name:"PinViral Scale",   monthly:11900, annual:99600  },
+            { key:"agency",  name:"PinViral Agency",  monthly:19900, annual:166800 },
+          ];
+          for (const p of plans) {
+            const mk = `${p.key}_monthly`; const ak = `${p.key}_annual`;
+            if (newIds[mk] && newIds[ak]) continue;
+            const prod = await stripePost(sk, "products", { name: p.name, "metadata[plan]": p.key });
+            if (!newIds[mk]) { const mp = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month" }); newIds[mk]=mp.id; }
+            if (!newIds[ak]) { const ap = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year"  }); newIds[ak]=ap.id; }
           }
+          const topups = [
+            { key:"topup_50img",    name:"PinViral Top-up: 50 Images",              amount:1200 },
+            { key:"topup_10vid",    name:"PinViral Top-up: 10 Videos",              amount:1900 },
+            { key:"topup_bundle_s", name:"PinViral Top-up: 50 Images + 5 Videos",   amount:2500 },
+            { key:"topup_bundle_m", name:"PinViral Top-up: 100 Images + 15 Videos", amount:4900 },
+            { key:"topup_bundle_l", name:"PinViral Top-up: 250 Images + 40 Videos", amount:9900 },
+          ];
+          for (const t of topups) {
+            if (newIds[t.key]) continue;
+            const prod = await stripePost(sk, "products", { name:t.name, "metadata[type]":"topup" });
+            const pr   = await stripePost(sk, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
+            newIds[t.key] = pr.id;
+          }
+          const ready = Object.keys(newIds).length >= 13;
+          setStripe(prev => ({ ...prev, priceIds: newIds as any, ready }));
+          try { localStorage.setItem("pinviral_prices", JSON.stringify(newIds)); } catch {}
         } catch(e) { devlog.warn("[autoInit prices]", e); }
-      }, 1000);
+      }, 1500);
     }
-
-    
 
     // -- Handle Stripe redirect ------------------------------------------------
     const params  = new URLSearchParams(window.location.search);
@@ -881,11 +916,26 @@ function AppInner() {
     setError(null);
     try {
       // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
+      const priceId  = (stripe.priceIds as any)?.[priceKey]
+                    || (stripe.priceIds as any)?.[planKey];
 
       if (!priceId) {
-        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
+        // Try fetching fresh from server before giving up
+        try {
+          const r = await fetch("/api/setup-stripe", { method: "GET" });
+          if (r.ok) {
+            const d = await r.json();
+            const freshId = d.priceIds?.[priceKey] || d.priceIds?.[planKey];
+            if (freshId) {
+              setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
+              const url = await createCheckoutSession({ priceId: freshId, planKey, billing, topupKey, email: session?.email });
+              window.location.href = url;
+              return;
+            }
+          }
+        } catch {}
+        throw new Error("Price not found. Please contact support.");
       }
 
       const url = await createCheckoutSession({
@@ -2165,8 +2215,13 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
+              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
+                stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
+                "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
+              <CreditCard size={12}/>{stripeStatus==="partial"?"Stripe ✓":"Setup Stripe"}
+            </button>
+            )}
 
-            {/* Stripe setup - admin only, hidden from users */}
             {/* Account button */}
             <button onClick={()=>setShowAccountModal(true)}
               className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
