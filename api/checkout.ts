@@ -1,105 +1,94 @@
 /**
- * /api/checkout.ts
- * POST { action:"checkout", priceId, planKey, billing, topupKey?, email?, successUrl, cancelUrl }
- *   → { url }
- * POST { action:"portal", customerId, returnUrl }
- *   → { url }
+ * /api/checkout.ts  — Vercel Edge-compatible serverless function
+ *
+ * POST  { action:"checkout", priceId, planKey, billing, topupKey?, email?, successUrl, cancelUrl }
+ *   → { url }   — Stripe hosted checkout URL
+ *
+ * POST  { action:"portal", customerId, returnUrl }
+ *   → { url }   — Stripe customer portal URL
  */
 
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import Stripe from "stripe";
 
-export const config = { runtime: "nodejs" };
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: "2024-06-20",
+});
 
-const SK = process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY!;
-
-async function stripePost(endpoint: string, params: Record<string, string>) {
-  const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${SK}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams(params).toString(),
-  });
-  const data = await res.json() as any;
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
-  return data;
-}
-
-async function stripeGet(endpoint: string) {
-  const res = await fetch(`https://api.stripe.com/v1/${endpoint}`, {
-    headers: { Authorization: `Bearer ${SK}` },
-  });
-  const data = await res.json() as any;
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
-  return data;
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  if (!SK) return res.status(500).json({ error: "STRIPE_SECRET_KEY not set" });
+export default async function handler(req: Request): Promise<Response> {
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+  }
 
   try {
-    const body = req.body;
-    const action = body.action || "checkout";
+    const body = await req.json();
+    const { action = "checkout" } = body;
 
-    // Billing portal
+    // ── Customer Portal ────────────────────────────────────────────────────
     if (action === "portal") {
       const { customerId, returnUrl } = body;
-      if (!customerId) return res.status(400).json({ error: "customerId required" });
-      const session = await stripePost("billing_portal/sessions", {
+      if (!customerId) {
+        return json({ error: "customerId is required" }, 400);
+      }
+      const session = await stripe.billingPortal.sessions.create({
         customer: customerId,
-        return_url: returnUrl || "",
+        return_url: returnUrl || process.env.NEXT_PUBLIC_SITE_URL || "https://localhost:3000",
       });
-      return res.status(200).json({ url: session.url });
+      return json({ url: session.url });
     }
 
-    // Cancel subscription
-    if (action === "cancel") {
-      const { subscriptionId } = body;
-      if (!subscriptionId) return res.status(400).json({ error: "subscriptionId required" });
-      await stripePost(`subscriptions/${subscriptionId}`, { cancel_at_period_end: "true" });
-      return res.status(200).json({ cancelled: true });
-    }
-
-    // Checkout session
+    // ── Checkout Session ───────────────────────────────────────────────────
     const { priceId, planKey, billing, topupKey, email, successUrl, cancelUrl } = body;
-    if (!priceId) return res.status(400).json({ error: "priceId required" });
 
-    const isRecurring = !topupKey;
+    if (!priceId) return json({ error: "priceId is required" }, 400);
 
+    const isTopup = !!topupKey;
+    const isRecurring = !isTopup;
+
+    // Optionally find/create customer by email for continuity
     let customerId: string | undefined;
     if (email) {
-      try {
-        const existing = await stripeGet(`customers/search?query=email:'${encodeURIComponent(email)}'&limit=1`);
-        customerId = existing.data?.[0]?.id;
-        if (!customerId) {
-          const created = await stripePost("customers", { email });
-          customerId = created.id;
-        }
-      } catch {}
+      const existing = await stripe.customers.list({ email, limit: 1 });
+      customerId = existing.data[0]?.id;
+      if (!customerId) {
+        const created = await stripe.customers.create({ email });
+        customerId = created.id;
+      }
     }
 
-    const params: Record<string, string> = {
-      mode:                      isRecurring ? "subscription" : "payment",
-      "line_items[0][price]":    priceId,
-      "line_items[0][quantity]": "1",
-      success_url:               successUrl,
-      cancel_url:                cancelUrl,
-      allow_promotion_codes:     "true",
-      "metadata[planKey]":       planKey || "",
-      "metadata[billing]":       billing || "monthly",
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      mode: isRecurring ? "subscription" : "payment",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl || `${process.env.NEXT_PUBLIC_SITE_URL}/?checkout=success`,
+      cancel_url:  cancelUrl  || `${process.env.NEXT_PUBLIC_SITE_URL}/?checkout=cancel`,
+      metadata: {
+        planKey,
+        billing: billing || "monthly",
+        ...(topupKey ? { topupKey } : {}),
+      },
+      ...(customerId ? { customer: customerId } : email ? { customer_email: email } : {}),
+      ...(isRecurring ? {
+        subscription_data: {
+          
+          metadata: { planKey, billing: billing || "monthly" },
+        },
+      } : {}),
+      allow_promotion_codes: true,
     };
-    if (topupKey)    params["metadata[topupKey]"]  = topupKey;
-    if (customerId)  params["customer"]             = customerId;
-    else if (email)  params["customer_email"]       = email;
-    if (isRecurring) params["subscription_data[trial_period_days]"] = "7";
 
-    const session = await stripePost("checkout/sessions", params);
-    return res.status(200).json({ url: session.url, sessionId: session.id });
+    const session = await stripe.checkout.sessions.create(sessionParams);
+    return json({ url: session.url, sessionId: session.id });
 
   } catch (err: any) {
     console.error("[/api/checkout]", err);
-    return res.status(500).json({ error: err.message || "Internal server error" });
+    return json({ error: err.message || "Internal server error" }, 500);
   }
 }
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export const config = { runtime: "edge" };
