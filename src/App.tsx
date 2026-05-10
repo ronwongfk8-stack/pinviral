@@ -123,30 +123,11 @@ interface StripeRuntime {
 try { localStorage.removeItem("pinviral_gemini_key"); } catch {}
 
 function readEnv(key: string): string {
-  // Vite (Vercel) exposes VITE_ vars via import.meta.env
-  const vite = (typeof import.meta !== "undefined" && (import.meta as any).env)
-    ? (import.meta as any).env as Record<string, string>
-    : {} as Record<string, string>;
-  // process.env fallback for AI Studio / Node / CRA
-  const e = (typeof process !== "undefined" ? process.env : {}) as Record<string, string>;
-
-  // localStorage override — user-pasted key always wins for GEMINI_API_KEY / API_KEY
-  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && typeof localStorage !== "undefined") {
-    const stored = localStorage.getItem("_pv_gemini_key") || "";
-    if (stored && stored.startsWith("AIza")) return stored;
-  }
-
-  const raw = (
-    vite[`VITE_${key}`]   ||
-    vite[key]             ||
-    e[key]                ||
-    e[`VITE_${key}`]      ||
-    e[`REACT_APP_${key}`] ||
-    ""
-  );
-  // Reject anything that is not a real Gemini API key (starts with AIza)
-  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && raw && !raw.startsWith("AIza")) return "";
-  return raw;
+  // Reads frontend-safe env vars — tries both VITE_ prefix and bare name
+  try {
+    const e = (import.meta as any).env as Record<string, string>;
+    return e["VITE_" + key] || e[key] || "";
+  } catch { return ""; }
 }
 
 // Save / clear user-provided Gemini key
@@ -682,45 +663,29 @@ function AppInner() {
     if (merged.publishableKey) setManualPk(merged.publishableKey);
 
     // -- Auto-create prices silently if keys present but prices missing --------
-    if (merged.keysPresent && !merged.ready) {
+    if (!merged.ready) {
+      // Auto-fetch price IDs from server on load
       setTimeout(async () => {
-        // Use merged directly · avoids stale closure on stripe state
-        const sk = merged.secretKey;
-        if (!sk) return;
         try {
-          const newIds: Record<string, string> = { ...merged.priceIds };
-          const plans = [
-            { key:"starter", name:"PinViral Starter", monthly:2900,  annual:24000  },
-            { key:"pro",     name:"PinViral Pro",     monthly:5900,  annual:49200  },
-            { key:"scale",   name:"PinViral Scale",   monthly:11900, annual:99600  },
-            { key:"agency",  name:"PinViral Agency",  monthly:19900, annual:166800 },
-          ];
-          for (const p of plans) {
-            const mk = `${p.key}_monthly`; const ak = `${p.key}_annual`;
-            if (newIds[mk] && newIds[ak]) continue;
-            const prod = await stripePost(sk, "products", { name: p.name, "metadata[plan]": p.key });
-            if (!newIds[mk]) { const mp = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month" }); newIds[mk]=mp.id; }
-            if (!newIds[ak]) { const ap = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year"  }); newIds[ak]=ap.id; }
+          const r = await fetch("/api/setup-stripe", { method: "GET" });
+          if (r.ok) {
+            const d = await r.json();
+            const count = Object.keys(d.priceIds || {}).length;
+            if (count > 0) {
+              setStripe(prev => ({
+                ...prev,
+                priceIds: { ...prev.priceIds, ...d.priceIds },
+                ready: count >= 13,
+                keysPresent: true,
+              }));
+              try { localStorage.setItem("pinviral_prices", JSON.stringify(d.priceIds)); } catch {}
+            }
           }
-          const topups = [
-            { key:"topup_50img",    name:"PinViral Top-up: 50 Images",              amount:1200 },
-            { key:"topup_10vid",    name:"PinViral Top-up: 10 Videos",              amount:1900 },
-            { key:"topup_bundle_s", name:"PinViral Top-up: 50 Images + 5 Videos",   amount:2500 },
-            { key:"topup_bundle_m", name:"PinViral Top-up: 100 Images + 15 Videos", amount:4900 },
-            { key:"topup_bundle_l", name:"PinViral Top-up: 250 Images + 40 Videos", amount:9900 },
-          ];
-          for (const t of topups) {
-            if (newIds[t.key]) continue;
-            const prod = await stripePost(sk, "products", { name:t.name, "metadata[type]":"topup" });
-            const pr   = await stripePost(sk, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
-            newIds[t.key] = pr.id;
-          }
-          const ready = Object.keys(newIds).length >= 13;
-          setStripe(prev => ({ ...prev, priceIds: newIds as any, ready }));
-          try { localStorage.setItem("pinviral_prices", JSON.stringify(newIds)); } catch {}
         } catch(e) { devlog.warn("[autoInit prices]", e); }
-      }, 1500);
+      }, 1000);
     }
+
+    
 
     // -- Handle Stripe redirect ------------------------------------------------
     const params  = new URLSearchParams(window.location.search);
@@ -2200,16 +2165,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
-            {/* Stripe status */}
-            {stripeStatus !== "live" && (
-            <button onClick={()=>setShowStripeSetup(true)}
-              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
-                "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="partial"?"Stripe ✓":"Setup Stripe"}
-            </button>
-            )}
 
+            {/* Stripe setup - admin only, hidden from users */}
             {/* Account button */}
             <button onClick={()=>setShowAccountModal(true)}
               className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
@@ -2615,7 +2572,6 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
             <div className="text-center max-w-3xl mx-auto mb-12">
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content · <span className="text-rose-600">Without Designers</span></h2>
               <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
-              {!stripe.keysPresent&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">Add Stripe keys to .env to activate checkout</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">Setup Stripe</button></motion.div>}
               <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
             </div>
 
