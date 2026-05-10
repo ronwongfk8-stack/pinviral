@@ -91,4 +91,4 @@ function json(data: unknown, status = 200): Response {
   });
 }
 
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs" };
