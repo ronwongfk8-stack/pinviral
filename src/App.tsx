@@ -882,7 +882,7 @@ function AppInner() {
     try {
       // Get the priceId from our stored stripe prices
       const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      const priceId  = stripe.priceIds?.[priceKey as keyof typeof stripe.priceIds] || stripe.priceIds?.[planKey as keyof typeof stripe.priceIds];
 
       if (!priceId) {
         throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
