@@ -2,7 +2,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { deductVideo } from "../lib/db";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+export const config = { runtime: "nodejs" };
+
+
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_API_KEY || process.env.API_KEY || "";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const VEO_MODELS = ["veo-3.0-generate-001", "veo-2.0-generate-001", "veo-3.0-fast-generate-001"];

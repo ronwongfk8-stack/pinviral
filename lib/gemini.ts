@@ -1,5 +1,5 @@
 // lib/gemini.ts — all Gemini calls, server-side only
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.VITE_API_KEY || process.env.API_KEY || "";
 
 const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-2.0-flash"];
 

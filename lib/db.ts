@@ -1,8 +1,8 @@
 // lib/db.ts — shared Supabase admin client (server-side only)
 import { createClient } from "@supabase/supabase-js";
 
-const url  = process.env.SUPABASE_URL!;
-const key  = process.env.SUPABASE_SERVICE_ROLE_KEY!; // service role — never expose to browser
+const url  = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL)!;
+const key  = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY)!; // service role — never expose to browser
 
 if (!url || !key) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set");
 

@@ -3,6 +3,9 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { geminiImage } from "../lib/gemini";
 import { db, deductImage } from "../lib/db";
 
+export const config = { runtime: "nodejs" };
+
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
