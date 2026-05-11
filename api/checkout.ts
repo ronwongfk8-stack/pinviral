@@ -93,7 +93,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (topupKey)    params["metadata[topupKey]"]  = topupKey;
     if (customerId)  params["customer"]             = customerId;
     else if (email)  params["customer_email"]       = email;
-    if (isRecurring) params["subscription_data[trial_period_days]"] = "7";
 
     const session = await stripePost("checkout/sessions", params);
     return res.status(200).json({ url: session.url, sessionId: session.id });
