@@ -1,21 +1,32 @@
-/**
- * /api/setup-stripe.ts  — Admin-only: create or fetch all 13 Stripe price IDs
- *
- * GET   → { priceIds }         — fetch existing prices from Stripe metadata
- * POST  → { priceIds, log[] }  — create any missing products/prices, return all IDs
- *
- * Idempotent: if a price already exists (found via Stripe metadata tag), it is
- * reused rather than duplicated.
- */
+// api/setup-stripe.ts
+// GET  → { priceIds } — fetch existing prices from Stripe metadata
+// POST → { priceIds, log[] } — create missing prices
 
-import Stripe from "stripe";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-06-20",
-});
+export const config = { runtime: "nodejs", maxDuration: 60 };
 
-// Tag used to identify PinViral prices so we never double-create
-const TAG = "pinviral_managed";
+const SK = process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY || "";
+
+async function stripeGet(path: string) {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    headers: { Authorization: `Bearer ${SK}` },
+  });
+  const data = await res.json() as any;
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
+  return data;
+}
+
+async function stripePost(path: string, params: Record<string, string>) {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${SK}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(params).toString(),
+  });
+  const data = await res.json() as any;
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
+  return data;
+}
 
 const PLANS = [
   { key: "starter", name: "PinViral Starter", monthly: 2900,  annual: 24000  },
@@ -34,10 +45,8 @@ const TOPUPS = [
 
 async function fetchExistingPriceIds(): Promise<Record<string, string>> {
   const ids: Record<string, string> = {};
-
-  // List all active prices with our tag
-  const prices = await stripe.prices.list({ active: true, limit: 100 });
-  for (const price of prices.data) {
+  const data = await stripeGet("prices?active=true&limit=100");
+  for (const price of data.data || []) {
     const tag = price.metadata?.pinviral_key;
     if (tag) ids[tag] = price.id;
   }
@@ -45,115 +54,66 @@ async function fetchExistingPriceIds(): Promise<Record<string, string>> {
 }
 
 async function ensureProduct(planKey: string, name: string): Promise<string> {
-  // Check if product already exists
-  const products = await stripe.products.search({
-    query: `metadata['pinviral_key']:'${planKey}'`,
-  });
-  if (products.data.length > 0) return products.data[0].id;
-
-  const product = await stripe.products.create({
-    name,
-    metadata: { pinviral_key: planKey, [TAG]: "true" },
-  });
-  return product.id;
+  const data = await stripeGet(`products/search?query=metadata['pinviral_key']:'${planKey}'&limit=1`);
+  if (data.data?.length > 0) return data.data[0].id;
+  const prod = await stripePost("products", { name, "metadata[pinviral_key]": planKey, "metadata[pinviral_managed]": "true" });
+  return prod.id;
 }
 
-async function ensurePrice(
-  productId: string,
-  priceKey: string,
-  amount: number,
-  interval: "month" | "year" | null, // null = one-time
-): Promise<string> {
-  // Check if price already tagged
-  const existing = await stripe.prices.list({ product: productId, active: true, limit: 20 });
-  const found = existing.data.find(p => p.metadata?.pinviral_key === priceKey);
+async function ensurePrice(productId: string, priceKey: string, amount: number, interval: "month" | "year" | null): Promise<string> {
+  const existing = await stripeGet(`prices?product=${productId}&active=true&limit=20`);
+  const found = (existing.data || []).find((p: any) => p.metadata?.pinviral_key === priceKey);
   if (found) return found.id;
-
-  const params: Stripe.PriceCreateParams = {
+  const params: Record<string, string> = {
     product: productId,
-    unit_amount: amount,
+    unit_amount: String(amount),
     currency: "usd",
-    metadata: { pinviral_key: priceKey, [TAG]: "true" },
-    ...(interval
-      ? { recurring: { interval } }
-      : {}),
+    "metadata[pinviral_key]": priceKey,
+    "metadata[pinviral_managed]": "true",
   };
-  const price = await stripe.prices.create(params);
+  if (interval) params["recurring[interval]"] = interval;
+  const price = await stripePost("prices", params);
   return price.id;
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  // Require admin secret to protect this endpoint in production
-  const adminSecret = process.env.ADMIN_SECRET;
-  if (adminSecret) {
-    const auth = req.headers.get("x-admin-secret");
-    if (auth !== adminSecret) {
-      return json({ error: "Unauthorized" }, 401);
-    }
-  }
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!SK) return res.status(500).json({ error: "STRIPE_SECRET_KEY not set in Vercel environment variables" });
 
   try {
-    // GET — return existing price IDs only
+    // GET — return existing prices
     if (req.method === "GET") {
       const priceIds = await fetchExistingPriceIds();
-      return json({ priceIds, count: Object.keys(priceIds).length });
+      return res.status(200).json({ priceIds, count: Object.keys(priceIds).length });
     }
 
-    if (req.method !== "POST") {
-      return json({ error: "Method not allowed" }, 405);
-    }
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
     // POST — create missing prices
     const log: string[] = [];
     const priceIds = await fetchExistingPriceIds();
     log.push(`Found ${Object.keys(priceIds).length} existing prices.`);
 
-    // Subscription plans (monthly + annual)
     for (const plan of PLANS) {
       const mk = `${plan.key}_monthly`;
       const ak = `${plan.key}_annual`;
-      if (priceIds[mk] && priceIds[ak]) {
-        log.push(`✓ ${plan.name} — already exists`);
-        continue;
-      }
-      log.push(`Creating ${plan.name}...`);
+      if (priceIds[mk] && priceIds[ak]) { log.push(`✓ ${plan.name} — exists`); continue; }
       const productId = await ensureProduct(plan.key, plan.name);
-      if (!priceIds[mk]) {
-        priceIds[mk] = await ensurePrice(productId, mk, plan.monthly, "month");
-        log.push(`  ✅ ${mk}: ${priceIds[mk]}`);
-      }
-      if (!priceIds[ak]) {
-        priceIds[ak] = await ensurePrice(productId, ak, plan.annual, "year");
-        log.push(`  ✅ ${ak}: ${priceIds[ak]}`);
-      }
+      if (!priceIds[mk]) { priceIds[mk] = await ensurePrice(productId, mk, plan.monthly, "month"); log.push(`✅ ${mk}: ${priceIds[mk]}`); }
+      if (!priceIds[ak]) { priceIds[ak] = await ensurePrice(productId, ak, plan.annual, "year"); log.push(`✅ ${ak}: ${priceIds[ak]}`); }
     }
 
-    // Top-up packs (one-time payments)
     for (const topup of TOPUPS) {
-      if (priceIds[topup.key]) {
-        log.push(`✓ ${topup.name} — already exists`);
-        continue;
-      }
-      log.push(`Creating ${topup.name}...`);
+      if (priceIds[topup.key]) { log.push(`✓ ${topup.name} — exists`); continue; }
       const productId = await ensureProduct(topup.key, topup.name);
       priceIds[topup.key] = await ensurePrice(productId, topup.key, topup.amount, null);
-      log.push(`  ✅ ${topup.key}: ${priceIds[topup.key]}`);
+      log.push(`✅ ${topup.key}: ${priceIds[topup.key]}`);
     }
 
     log.push(`Done — ${Object.keys(priceIds).length}/13 prices ready.`);
-    return json({ priceIds, log, count: Object.keys(priceIds).length });
+    return res.status(200).json({ priceIds, log, count: Object.keys(priceIds).length });
 
   } catch (err: any) {
     console.error("[/api/setup-stripe]", err);
-    return json({ error: err.message || "Internal error" }, 500);
+    return res.status(500).json({ error: err.message || "Internal error" });
   }
 }
-
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-export const config = { runtime: "nodejs" };

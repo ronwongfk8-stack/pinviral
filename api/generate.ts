@@ -1,10 +1,8 @@
 // api/generate.ts — all Gemini text calls, server-side
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { geminiText } from "../lib/gemini";
-import { db } from "../lib/db";
 
 export const config = { runtime: "nodejs" };
-
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -17,8 +15,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userId?: string;
     };
 
+    // Log generation if db is available (non-fatal if not)
     if (userId) {
-      await db.from("generation_log").insert({ user_id: userId, type: "strategy" }).catch(() => {});
+      try {
+        const { db } = await import("../lib/db");
+        if (db) await db.from("generation_log").insert({ user_id: userId, type: "strategy" });
+      } catch {}
     }
 
     const text = await geminiText(prompt || "", { jsonMode: jsonMode || false, parts: parts || undefined });
