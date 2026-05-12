@@ -915,22 +915,13 @@ function AppInner() {
     setCheckoutLoading(lk);
     setError(null);
     try {
-      // Get priceId — topupKey is already the full key e.g. "topup_50img"
-      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
-      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey];
+      // Get the priceId from our stored stripe prices
+      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
+      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
 
       if (!priceId) {
-        // Fetch fresh from server
-        try {
-          const r = await fetch("/api/setup-stripe", { method: "GET" });
-          if (r.ok) {
-            const d = await r.json();
-            priceId = d.priceIds?.[priceKey];
-            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
-          }
-        } catch {}
+        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
       }
-      if (!priceId) throw new Error("Price not found for: " + priceKey + ". Please contact support.");
 
       const url = await createCheckoutSession({
         priceId,
@@ -2209,25 +2200,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
             </div>
 
-            {/* API Key status button */}
-            <button onClick={()=>{ setApiKeyInput(""); setApiKeyError(""); setShowApiKeyModal(true); }}
-              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                geminiKey ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                           : "bg-red-50 border-red-200 text-red-600 hover:bg-red-100 animate-pulse")}>
-              <Key size={12}/>{geminiKey ? "AI Key ✓" : "Add API Key ⚠"}
-            </button>
-
-            {/* Stripe status */}
-            {stripeStatus !== "live" && (
-            <button onClick={()=>setShowStripeSetup(true)}
-              className={cn("hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold rounded-lg border transition-all",
-                stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100":
-                "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100")}>
-              <CreditCard size={12}/>{stripeStatus==="partial"?"Stripe ✓":"Setup Stripe"}
-            </button>
-            )}
-
-            {/* Account button */}
+                        {/* Account button */}
             <button onClick={()=>setShowAccountModal(true)}
               className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
               <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-white"><User size={12}/></div>
