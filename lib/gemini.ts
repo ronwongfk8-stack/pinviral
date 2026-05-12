@@ -1,4 +1,4 @@
-﻿// lib/gemini.ts â€” all Gemini calls, server-side only
+﻿// lib/gemini.ts — all Gemini calls, server-side only
 
 const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-2.0-flash"];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -30,6 +30,7 @@ export async function geminiText(
             body: JSON.stringify({ contents: [{ parts: contentParts }], ...genConfig }),
           }
         );
+
         if (res.ok) {
           const data = await res.json();
           const parts = data?.candidates?.[0]?.content?.parts || [];
@@ -39,6 +40,7 @@ export async function geminiText(
           text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
           return text;
         }
+
         const errData = await res.json().catch(() => ({}));
         const msg = errData?.error?.message || `HTTP ${res.status}`;
         if (res.status === 401 || res.status === 403) throw new Error("Invalid Gemini API key: " + msg);
@@ -72,6 +74,7 @@ export async function geminiImage(prompt: string, imageB64?: string, imageMime?:
     for (let att = 0; att < 3; att++) {
       try {
         let b64: string | null = null;
+
         if (type === "imagen") {
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${name}:predict?key=${GEMINI_KEY}`,
@@ -96,6 +99,7 @@ export async function geminiImage(prompt: string, imageB64?: string, imageMime?:
             }
           } else { if (res.status === 429) throw new Error("Quota exceeded"); if (res.status === 503 && att < 2) { await sleep(3000*(att+1)); continue; } break; }
         }
+
         if (b64) return b64;
         break;
       } catch (e: any) {

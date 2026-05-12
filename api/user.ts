@@ -1,6 +1,6 @@
 // api/user.ts — get or create user, returns session data
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getOrCreateUser } from "../lib/db";
+import { getOrCreateUser } from "../lib/db.js";
 
 export const config = { runtime: "nodejs" };
 

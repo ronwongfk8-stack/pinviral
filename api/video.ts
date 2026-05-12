@@ -1,6 +1,6 @@
 // api/video.ts — video generation via Veo 3, server-side
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { deductVideo } from "../lib/db";
+import { deductVideo } from "../lib/db.js";
 
 export const config = { runtime: "nodejs" };
 
