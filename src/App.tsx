@@ -479,6 +479,8 @@ function AppInner() {
   const [editableSubtext, setEditableSubtext]               = useState("");
   const [editableCTA, setEditableCTA]                       = useState("");
   const [editableAltText, setEditableAltText]               = useState("");
+  const [perHeadlineSeo, setPerHeadlineSeo]                 = useState<string[]>([]);
+  const [isGenHeadlineSeo, setIsGenHeadlineSeo]             = useState(false);
   const [uploadedImage, setUploadedImage]                   = useState<string | null>(null);
   const [generatedImage, setGeneratedImage]                 = useState<string | null>(null);
   const [copiedField, setCopiedField]                       = useState<string | null>(null);
@@ -915,13 +917,22 @@ function AppInner() {
     setCheckoutLoading(lk);
     setError(null);
     try {
-      // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      // Get priceId — topupKey is already the full key e.g. "topup_50img"
+      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
+      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey];
 
       if (!priceId) {
-        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
+        // Fetch fresh from server
+        try {
+          const r = await fetch("/api/setup-stripe", { method: "GET" });
+          if (r.ok) {
+            const d = await r.json();
+            priceId = d.priceIds?.[priceKey];
+            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
+          }
+        } catch {}
       }
+      if (!priceId) throw new Error("Price not found. Please contact support.");
 
       const url = await createCheckoutSession({
         priceId,
@@ -937,6 +948,36 @@ function AppInner() {
     } finally {
       setCheckoutLoading(null);
     }
+  };
+
+  // -- Generate SEO description per headline ----------------------------------
+  const generateHeadlineSeo = async (headlines: string[], angle: ViralAngle, pName: string) => {
+    if (!headlines.length) return;
+    setIsGenHeadlineSeo(true);
+    try {
+      const prompt = `You are a Pinterest SEO expert. For the product "${pName}", generate ${headlines.length} unique Pinterest SEO-optimized pin descriptions (120-200 words each), one for each headline below. Each description must be tailored to its headline's angle and include relevant keywords.
+
+Headlines:
+${headlines.map((h, i) => `${i+1}. ${h}`).join('\n')}
+
+Base psychology: ${angle.psychology}
+
+Return ONLY a JSON array of ${headlines.length} strings, no other text.`;
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, jsonMode: true }),
+      });
+      const data = await res.json();
+      if (data.text) {
+        try {
+          const parsed = JSON.parse(data.text);
+          if (Array.isArray(parsed)) setPerHeadlineSeo(parsed);
+        } catch {}
+      }
+    } catch {}
+    finally { setIsGenHeadlineSeo(false); }
   };
 
   // -- Stripe Customer Portal ------------------------------------------------
@@ -1118,6 +1159,8 @@ const geminiRest = async (prompt: string, config?: any, parts?: any[]): Promise<
     setEditableAltText(angle.altText || `${productName} - ${angle.title}. ${angle.psychology}`);
     setAnimationPrompt(angle.animationPrompt);
     // Lazy enrichment: fires once when user picks an angle
+    // Clear previous headline SEO
+    setPerHeadlineSeo([]);
     // Populates altText, pinDescription, hashtags with AI-enriched copy
     if (strategy && !angle.pinDescription) {
       const ctx = socialProof ? `Social proof: ${JSON.stringify(socialProof)}.` : "";
@@ -2459,7 +2502,52 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                           {isRegenField==="headline"?<Loader2 size={10} className="animate-spin"/>:<RefreshCw size={10}/>}? Regenerate
                         </button>
                       </div>
-                      <div className="flex flex-wrap gap-2">{strategy.angles[selectedAngleIndex].headlines.map((h,i)=><button key={i} onClick={()=>setEditableHeadline(h)} className={cn("px-3 py-2 text-[10px] font-bold rounded-xl border transition-all",editableHeadline===h?"bg-rose-600 border-rose-600 text-white":"bg-white border-slate-100 text-slate-600 hover:border-rose-200")}>Var {i+1}</button>)}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {strategy.angles[selectedAngleIndex].headlines.map((h,i)=>(
+                          <button key={i}
+                            onClick={()=>{
+                              setEditableHeadline(h);
+                              // Generate per-headline SEO if not yet done
+                              if (!perHeadlineSeo.length && !isGenHeadlineSeo) {
+                                generateHeadlineSeo(
+                                  strategy.angles[selectedAngleIndex].headlines,
+                                  strategy.angles[selectedAngleIndex],
+                                  productName
+                                );
+                              }
+                            }}
+                            className={cn("px-3 py-2 text-[10px] font-bold rounded-xl border transition-all",
+                              editableHeadline===h?"bg-rose-600 border-rose-600 text-white":"bg-white border-slate-100 text-slate-600 hover:border-rose-200"
+                            )}>Var {i+1}</button>
+                        ))}
+                      </div>
+                      {/* Per-headline SEO description */}
+                      {(perHeadlineSeo.length > 0 || isGenHeadlineSeo) && (() => {
+                        const idx = strategy.angles[selectedAngleIndex].headlines.indexOf(editableHeadline);
+                        const seoText = perHeadlineSeo[idx] || "";
+                        return (
+                          <div className="mt-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl space-y-2">
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
+                                <Search size={10}/>SEO for this headline
+                              </p>
+                              {seoText && (
+                                <button onClick={()=>copyToClipboard(seoText,"headlineSeo")}
+                                  className="p-1 hover:bg-indigo-100 rounded-lg text-indigo-400">
+                                  {copiedField==="headlineSeo"?<Check size={11} className="text-emerald-500"/>:<Copy size={11}/>}
+                                </button>
+                              )}
+                            </div>
+                            {isGenHeadlineSeo && !seoText ? (
+                              <div className="flex items-center gap-2 text-indigo-500 text-[11px]">
+                                <Loader2 size={11} className="animate-spin"/>Generating SEO for each headline...
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-indigo-800 leading-relaxed">{seoText}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>}
                   </div>
                 </StepCard>
