@@ -393,7 +393,7 @@ async function createCheckoutSession(params: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       ...params,
-      successUrl: `${origin}/?checkout=success&plan=${params.planKey}&billing=${params.billing || "monthly"}${params.topupKey ? "&topup=" + params.topupKey : ""}`,
+      successUrl: `${origin}/?checkout=success`,
       cancelUrl:  `${origin}/?checkout=cancel`,
     }),
   });
@@ -479,6 +479,10 @@ function AppInner() {
   const [editableSubtext, setEditableSubtext]               = useState("");
   const [editableCTA, setEditableCTA]                       = useState("");
   const [editableAltText, setEditableAltText]               = useState("");
+  const [perHeadlineSeo, setPerHeadlineSeo]                 = useState<string[]>([]);
+  const [isGenHeadlineSeo, setIsGenHeadlineSeo]             = useState(false);
+  const [sceneCopy, setSceneCopy]                           = useState<{title:string;description:string;altText:string}|null>(null);
+  const [isGenSceneCopy, setIsGenSceneCopy]                 = useState(false);
   const [uploadedImage, setUploadedImage]                   = useState<string | null>(null);
   const [generatedImage, setGeneratedImage]                 = useState<string | null>(null);
   const [copiedField, setCopiedField]                       = useState<string | null>(null);
@@ -916,12 +920,20 @@ function AppInner() {
     setError(null);
     try {
       // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
-      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
+      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
+      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey] || (stripe.priceIds as any)?.[planKey];
 
       if (!priceId) {
-        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
+        try {
+          const r = await fetch("/api/setup-stripe", { method: "GET" });
+          if (r.ok) {
+            const d = await r.json();
+            priceId = d.priceIds?.[priceKey] || d.priceIds?.[planKey];
+            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
+          }
+        } catch {}
       }
+      if (!priceId) throw new Error("Price not found. Please contact support.");
 
       const url = await createCheckoutSession({
         priceId,
@@ -931,27 +943,49 @@ function AppInner() {
         email: session?.email,
       });
 
-      // Save current work state so it's restored after Stripe redirect
-      try {
-        const workState: any = { productName, productUrl, selectedAngleIndex };
-        if (strategy)        workState.strategy        = JSON.stringify(strategy);
-        if (productAnalysis) workState.productAnalysis  = JSON.stringify(productAnalysis);
-        if (uploadedImage)   workState.uploadedImage    = uploadedImage;
-        if (generatedImage)  workState.generatedImage   = generatedImage;
-        if (editableHeadline) workState.editableHeadline = editableHeadline;
-        if (editableSubtext)  workState.editableSubtext  = editableSubtext;
-        if (editableCTA)      workState.editableCTA      = editableCTA;
-        if (editableAltText)  workState.editableAltText  = editableAltText;
-        if (animationPrompt)  workState.animationPrompt  = animationPrompt;
-        if (selectedEnvId)    workState.selectedEnvId    = selectedEnvId;
-        localStorage.setItem("pinviral_work_state", JSON.stringify(workState));
-      } catch {}
       window.location.href = url;
     } catch (err: any) {
       setError(err.message || "Checkout failed. Please try again.");
     } finally {
       setCheckoutLoading(null);
     }
+  };
+
+  // -- Generate title/description/alttext per scene environment --------------
+  const generateSceneCopy = async (env: EnvironmentOption, angle: ViralAngle, pName: string) => {
+    setIsGenSceneCopy(true);
+    setSceneCopy(null);
+    try {
+      const prompt = `You are a Pinterest SEO expert. For the product "${pName}", generate copy for a pin featuring this scene: "${env.label}" (${env.mood} mood).
+
+Based on this angle: "${angle.psychology}"
+
+Return ONLY a JSON object:
+{
+  "title": "compelling pin title max 100 chars, different from generic titles",
+  "description": "120-200 word SEO-optimized Pinterest description with keywords",
+  "altText": "concise image alt text for accessibility, 1-2 sentences"
+}`;
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, jsonMode: true }),
+      });
+      const data = await res.json();
+      if (data.text) {
+        try {
+          const parsed = JSON.parse(data.text);
+          if (parsed.title && parsed.description) {
+            setSceneCopy(parsed);
+            // Also update the editable fields
+            setEditableHeadline(parsed.title);
+            setEditableAltText(parsed.altText || "");
+          }
+        } catch {}
+      }
+    } catch {}
+    finally { setIsGenSceneCopy(false); }
   };
 
   // -- Stripe Customer Portal ------------------------------------------------
@@ -2382,7 +2416,14 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Choose a Scene</p>
                               {productAnalysis.environments.map((env,i)=>(
                                 <motion.button key={env.id} initial={{opacity:0,x:-6}} animate={{opacity:1,x:0}} transition={{delay:i*0.04}}
-                                  onClick={()=>{setSelectedEnvId(env.id);setShowCustomEnv(false);}}
+                                  onClick={()=>{
+                                    setSelectedEnvId(env.id);
+                                    setShowCustomEnv(false);
+                                    setSceneCopy(null);
+                                    if (strategy && selectedAngleIndex !== null) {
+                                      generateSceneCopy(env, strategy.angles[selectedAngleIndex], productName);
+                                    }
+                                  }}
                                   className={cn("w-full flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all hover:scale-[1.01]",selectedEnvId===env.id&&!showCustomEnv?"border-violet-500 bg-violet-50 shadow-md shadow-violet-100":"border-slate-100 bg-slate-50 hover:border-violet-200")}>
                                   <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-600 text-white":"bg-white text-slate-400")}>{ENV_ICONS[env.icon]||<Camera size={13}/>}</div>
                                   <div className="flex-1 min-w-0"><div className="flex items-center gap-2 mb-0.5"><p className="font-black text-slate-900 text-xs">{env.label}</p><span className={cn("px-1.5 py-0.5 text-[9px] font-black rounded-full uppercase",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-200 text-violet-700":"bg-slate-200 text-slate-500")}>{env.mood}</span></div><p className="text-[10px] text-slate-500 font-medium line-clamp-1">{env.prompt}</p></div>
@@ -2406,6 +2447,56 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                   </div>
                 </StepCard>
 
+                {/* Scene Copy Panel — shown when env is selected and copy generated */}
+                {(isGenSceneCopy || sceneCopy) && (
+                  <div className="bg-white rounded-[2rem] border border-violet-200 shadow-sm overflow-hidden">
+                    <div className="flex items-center gap-3 px-5 pt-5 pb-3 border-b border-violet-100">
+                      <div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Sparkles size={15}/></div>
+                      <p className="font-black text-slate-900 text-sm">Scene Copy</p>
+                      <span className="text-[9px] font-black text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full uppercase tracking-widest">Auto-generated for this scene</span>
+                    </div>
+                    {isGenSceneCopy ? (
+                      <div className="flex items-center gap-3 p-5 text-violet-600 text-sm font-medium">
+                        <Loader2 size={15} className="animate-spin"/><span>Generating copy for this scene...</span>
+                      </div>
+                    ) : sceneCopy ? (
+                      <div className="p-5 space-y-4">
+                        {/* Title */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pin Title</p>
+                            <button onClick={()=>copyToClipboard(sceneCopy.title,"sceneTitle")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneTitle"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
+                          </div>
+                          <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl">
+                            <p className="text-rose-800 text-sm font-bold">{sceneCopy.title}</p>
+                          </div>
+                        </div>
+                        {/* Description */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SEO Description</p>
+                            <button onClick={()=>copyToClipboard(sceneCopy.description,"sceneDesc")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneDesc"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
+                          </div>
+                          <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl">
+                            <p className="text-indigo-800 text-xs leading-relaxed">{sceneCopy.description}</p>
+                          </div>
+                        </div>
+                        {/* Alt Text */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alt Text</p>
+                            <button onClick={()=>copyToClipboard(sceneCopy.altText,"sceneAlt")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneAlt"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
+                          </div>
+                          <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
+                            <p className="text-slate-600 text-xs leading-relaxed">{sceneCopy.altText}</p>
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-slate-400 text-center">Click a different scene above to generate new copy for that scene</p>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
                 {/* Step 3 · Copy & SEO */}
                 <StepCard number={3} title="Copy & SEO Content" subtitle="Headlines, description and tags ready to copy" badge="Auto-generated">
                   {selectedAngleIndex!==null&&(
@@ -2426,8 +2517,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                         </div>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-                          <div className="flex items-center justify-between mb-1">
+                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+                          <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2"><div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600"><Search size={16}/></div><p className="font-black text-slate-900 text-sm">SEO Description</p></div>
                             <div className="flex items-center gap-1">
                               <button onClick={()=>regenField("description")} disabled={isRegenField==="description"} className="p-1.5 hover:bg-slate-100 rounded-xl text-violet-500 disabled:opacity-50" title="Regenerate">{isRegenField==="description"?<Loader2 size={13} className="animate-spin"/>:<RefreshCw size={13}/>}</button>
@@ -2435,17 +2526,6 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                             </div>
                           </div>
                           <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><p className="text-slate-600 text-xs leading-relaxed whitespace-pre-wrap">{strategy.angles[selectedAngleIndex].pinDescription}</p></div>
-                          {/* Pin Title — copyable, below SEO */}
-                          <div className="border-t border-slate-100 pt-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pin Title</p>
-                              <button onClick={()=>copyToClipboard(editableHeadline,"pintitle")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="pintitle"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button>
-                            </div>
-                            <div className="bg-rose-50 p-3 rounded-2xl border border-rose-100">
-                              <p className="text-rose-800 text-sm font-bold leading-snug">{editableHeadline || "Select a headline variant above"}</p>
-                            </div>
-                            <p className="text-[10px] text-slate-400 mt-1">Shown on Pinterest · Max 100 chars</p>
-                          </div>
                         </div>
                         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><div className="w-8 h-8 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600"><Accessibility size={16}/></div><p className="font-black text-slate-900 text-sm">Alt Text</p></div><button onClick={()=>copyToClipboard(editableAltText,"alt")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="alt"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button></div><div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><textarea className="w-full bg-transparent text-slate-600 text-xs leading-relaxed outline-none resize-none h-24 font-medium" value={editableAltText} onChange={e=>setEditableAltText(e.target.value)} placeholder="Describe the image..."/></div></div>
                         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm md:col-span-2">
