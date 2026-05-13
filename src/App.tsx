@@ -393,7 +393,7 @@ async function createCheckoutSession(params: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       ...params,
-      successUrl: `${origin}/?checkout=success`,
+      successUrl: `${origin}/?checkout=success&plan=${params.planKey}&billing=${params.billing || "monthly"}${params.topupKey ? "&topup=" + params.topupKey : ""}`,
       cancelUrl:  `${origin}/?checkout=cancel`,
     }),
   });
@@ -479,8 +479,6 @@ function AppInner() {
   const [editableSubtext, setEditableSubtext]               = useState("");
   const [editableCTA, setEditableCTA]                       = useState("");
   const [editableAltText, setEditableAltText]               = useState("");
-  const [perHeadlineSeo, setPerHeadlineSeo]                 = useState<string[]>([]);
-  const [isGenHeadlineSeo, setIsGenHeadlineSeo]             = useState(false);
   const [uploadedImage, setUploadedImage]                   = useState<string | null>(null);
   const [generatedImage, setGeneratedImage]                 = useState<string | null>(null);
   const [copiedField, setCopiedField]                       = useState<string | null>(null);
@@ -917,22 +915,13 @@ function AppInner() {
     setCheckoutLoading(lk);
     setError(null);
     try {
-      // Get priceId — topupKey is already the full key e.g. "topup_50img"
-      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
-      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey];
+      // Get the priceId from our stored stripe prices
+      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
+      const priceId  = stripe.prices?.[priceKey] || stripe.prices?.[planKey];
 
       if (!priceId) {
-        // Fetch fresh from server
-        try {
-          const r = await fetch("/api/setup-stripe", { method: "GET" });
-          if (r.ok) {
-            const d = await r.json();
-            priceId = d.priceIds?.[priceKey];
-            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
-          }
-        } catch {}
+        throw new Error("Price not configured. Please set up Stripe prices in the Stripe setup panel.");
       }
-      if (!priceId) throw new Error("Price not found. Please contact support.");
 
       const url = await createCheckoutSession({
         priceId,
@@ -942,42 +931,27 @@ function AppInner() {
         email: session?.email,
       });
 
+      // Save current work state so it's restored after Stripe redirect
+      try {
+        const workState: any = { productName, productUrl, selectedAngleIndex };
+        if (strategy)        workState.strategy        = JSON.stringify(strategy);
+        if (productAnalysis) workState.productAnalysis  = JSON.stringify(productAnalysis);
+        if (uploadedImage)   workState.uploadedImage    = uploadedImage;
+        if (generatedImage)  workState.generatedImage   = generatedImage;
+        if (editableHeadline) workState.editableHeadline = editableHeadline;
+        if (editableSubtext)  workState.editableSubtext  = editableSubtext;
+        if (editableCTA)      workState.editableCTA      = editableCTA;
+        if (editableAltText)  workState.editableAltText  = editableAltText;
+        if (animationPrompt)  workState.animationPrompt  = animationPrompt;
+        if (selectedEnvId)    workState.selectedEnvId    = selectedEnvId;
+        localStorage.setItem("pinviral_work_state", JSON.stringify(workState));
+      } catch {}
       window.location.href = url;
     } catch (err: any) {
       setError(err.message || "Checkout failed. Please try again.");
     } finally {
       setCheckoutLoading(null);
     }
-  };
-
-  // -- Generate SEO description per headline ----------------------------------
-  const generateHeadlineSeo = async (headlines: string[], angle: ViralAngle, pName: string) => {
-    if (!headlines.length) return;
-    setIsGenHeadlineSeo(true);
-    try {
-      const prompt = `You are a Pinterest SEO expert. For the product "${pName}", generate ${headlines.length} unique Pinterest SEO-optimized pin descriptions (120-200 words each), one for each headline below. Each description must be tailored to its headline's angle and include relevant keywords.
-
-Headlines:
-${headlines.map((h, i) => `${i+1}. ${h}`).join('\n')}
-
-Base psychology: ${angle.psychology}
-
-Return ONLY a JSON array of ${headlines.length} strings, no other text.`;
-
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, jsonMode: true }),
-      });
-      const data = await res.json();
-      if (data.text) {
-        try {
-          const parsed = JSON.parse(data.text);
-          if (Array.isArray(parsed)) setPerHeadlineSeo(parsed);
-        } catch {}
-      }
-    } catch {}
-    finally { setIsGenHeadlineSeo(false); }
   };
 
   // -- Stripe Customer Portal ------------------------------------------------
@@ -1159,8 +1133,6 @@ const geminiRest = async (prompt: string, config?: any, parts?: any[]): Promise<
     setEditableAltText(angle.altText || `${productName} - ${angle.title}. ${angle.psychology}`);
     setAnimationPrompt(angle.animationPrompt);
     // Lazy enrichment: fires once when user picks an angle
-    // Clear previous headline SEO
-    setPerHeadlineSeo([]);
     // Populates altText, pinDescription, hashtags with AI-enriched copy
     if (strategy && !angle.pinDescription) {
       const ctx = socialProof ? `Social proof: ${JSON.stringify(socialProof)}.` : "";
@@ -2454,8 +2426,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                         </div>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                          <div className="flex items-center justify-between mb-3">
+                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
+                          <div className="flex items-center justify-between mb-1">
                             <div className="flex items-center gap-2"><div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600"><Search size={16}/></div><p className="font-black text-slate-900 text-sm">SEO Description</p></div>
                             <div className="flex items-center gap-1">
                               <button onClick={()=>regenField("description")} disabled={isRegenField==="description"} className="p-1.5 hover:bg-slate-100 rounded-xl text-violet-500 disabled:opacity-50" title="Regenerate">{isRegenField==="description"?<Loader2 size={13} className="animate-spin"/>:<RefreshCw size={13}/>}</button>
@@ -2463,6 +2435,17 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                             </div>
                           </div>
                           <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><p className="text-slate-600 text-xs leading-relaxed whitespace-pre-wrap">{strategy.angles[selectedAngleIndex].pinDescription}</p></div>
+                          {/* Pin Title — copyable, below SEO */}
+                          <div className="border-t border-slate-100 pt-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pin Title</p>
+                              <button onClick={()=>copyToClipboard(editableHeadline,"pintitle")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="pintitle"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button>
+                            </div>
+                            <div className="bg-rose-50 p-3 rounded-2xl border border-rose-100">
+                              <p className="text-rose-800 text-sm font-bold leading-snug">{editableHeadline || "Select a headline variant above"}</p>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1">Shown on Pinterest · Max 100 chars</p>
+                          </div>
                         </div>
                         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><div className="w-8 h-8 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600"><Accessibility size={16}/></div><p className="font-black text-slate-900 text-sm">Alt Text</p></div><button onClick={()=>copyToClipboard(editableAltText,"alt")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="alt"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button></div><div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><textarea className="w-full bg-transparent text-slate-600 text-xs leading-relaxed outline-none resize-none h-24 font-medium" value={editableAltText} onChange={e=>setEditableAltText(e.target.value)} placeholder="Describe the image..."/></div></div>
                         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm md:col-span-2">
@@ -2502,52 +2485,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                           {isRegenField==="headline"?<Loader2 size={10} className="animate-spin"/>:<RefreshCw size={10}/>}? Regenerate
                         </button>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].headlines.map((h,i)=>(
-                          <button key={i}
-                            onClick={()=>{
-                              setEditableHeadline(h);
-                              // Generate per-headline SEO if not yet done
-                              if (!perHeadlineSeo.length && !isGenHeadlineSeo) {
-                                generateHeadlineSeo(
-                                  strategy.angles[selectedAngleIndex].headlines,
-                                  strategy.angles[selectedAngleIndex],
-                                  productName
-                                );
-                              }
-                            }}
-                            className={cn("px-3 py-2 text-[10px] font-bold rounded-xl border transition-all",
-                              editableHeadline===h?"bg-rose-600 border-rose-600 text-white":"bg-white border-slate-100 text-slate-600 hover:border-rose-200"
-                            )}>Var {i+1}</button>
-                        ))}
-                      </div>
-                      {/* Per-headline SEO description */}
-                      {(perHeadlineSeo.length > 0 || isGenHeadlineSeo) && (() => {
-                        const idx = strategy.angles[selectedAngleIndex].headlines.indexOf(editableHeadline);
-                        const seoText = perHeadlineSeo[idx] || "";
-                        return (
-                          <div className="mt-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl space-y-2">
-                            <div className="flex items-center justify-between">
-                              <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
-                                <Search size={10}/>SEO for this headline
-                              </p>
-                              {seoText && (
-                                <button onClick={()=>copyToClipboard(seoText,"headlineSeo")}
-                                  className="p-1 hover:bg-indigo-100 rounded-lg text-indigo-400">
-                                  {copiedField==="headlineSeo"?<Check size={11} className="text-emerald-500"/>:<Copy size={11}/>}
-                                </button>
-                              )}
-                            </div>
-                            {isGenHeadlineSeo && !seoText ? (
-                              <div className="flex items-center gap-2 text-indigo-500 text-[11px]">
-                                <Loader2 size={11} className="animate-spin"/>Generating SEO for each headline...
-                              </div>
-                            ) : (
-                              <p className="text-[11px] text-indigo-800 leading-relaxed">{seoText}</p>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      <div className="flex flex-wrap gap-2">{strategy.angles[selectedAngleIndex].headlines.map((h,i)=><button key={i} onClick={()=>setEditableHeadline(h)} className={cn("px-3 py-2 text-[10px] font-bold rounded-xl border transition-all",editableHeadline===h?"bg-rose-600 border-rose-600 text-white":"bg-white border-slate-100 text-slate-600 hover:border-rose-200")}>Var {i+1}</button>)}</div>
                     </div>}
                   </div>
                 </StepCard>
