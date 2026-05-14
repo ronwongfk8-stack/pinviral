@@ -804,7 +804,6 @@ function AppInner() {
       } catch {}
       window.history.replaceState({}, "", window.location.pathname);
     } else if (canceled) {
-      // Restore work state even when cancelled
       try {
         const raw = localStorage.getItem("pinviral_work_state");
         if (raw) {
@@ -824,7 +823,7 @@ function AppInner() {
           localStorage.removeItem("pinviral_work_state");
         }
       } catch {}
-      showToast("info", "Payment was canceled. Your work has been restored.");
+      showToast("info", "Payment canceled. Your work has been restored.");
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -935,8 +934,6 @@ function AppInner() {
     setCheckoutLoading(lk);
     setError(null);
     try {
-      // Get the priceId from our stored stripe prices
-      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
       const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
       let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey] || (stripe.priceIds as any)?.[planKey];
 
@@ -952,7 +949,7 @@ function AppInner() {
       }
       if (!priceId) throw new Error("Price not found. Please contact support.");
 
-      // Save work state before leaving — restored on return regardless of payment outcome
+      // Save work state before Stripe redirect — restored on return
       try {
         const ws: any = { productName };
         if (strategy)         ws.strategy         = JSON.stringify(strategy);
@@ -1179,10 +1176,8 @@ const geminiRest = async (prompt: string, config?: any, parts?: any[]): Promise<
   // -- Pinterest API ------------------------------------------------------
   const PINTEREST_CLIENT_ID = readEnv("PINTEREST_CLIENT_ID") || readEnv("PINTEREST_APP_ID") || "";
   const connectPinterest = () => {
-    // Open Pinterest directly — user logs in to their own account
     window.open("https://www.pinterest.com", "_blank", "noopener,noreferrer");
   };
-
   const fetchPinterestBoards = async (token: string) => {
     try {
       const r = await fetch("https://api.pinterest.com/v5/boards?page_size=25", {
@@ -2132,11 +2127,8 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               </div>
             </div>
             <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe · Cancel anytime</p>
-            {/* Quit button — always returns to working state */}
-            <button
-              onClick={()=>{ setShowPricingModal(false); setShowUpgradeModal(false); }}
-              className="w-full py-3 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors text-center"
-            >
+            <button onClick={()=>{ setShowPricingModal(false); setShowUpgradeModal(false); }}
+              className="w-full py-3 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors text-center">
               ✕ Continue without upgrading
             </button>
           </div>
