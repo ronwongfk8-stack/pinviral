@@ -479,10 +479,6 @@ function AppInner() {
   const [editableSubtext, setEditableSubtext]               = useState("");
   const [editableCTA, setEditableCTA]                       = useState("");
   const [editableAltText, setEditableAltText]               = useState("");
-  const [perHeadlineSeo, setPerHeadlineSeo]                 = useState<string[]>([]);
-  const [isGenHeadlineSeo, setIsGenHeadlineSeo]             = useState(false);
-  const [sceneCopy, setSceneCopy]                           = useState<{title:string;description:string;altText:string}|null>(null);
-  const [isGenSceneCopy, setIsGenSceneCopy]                 = useState(false);
   const [uploadedImage, setUploadedImage]                   = useState<string | null>(null);
   const [generatedImage, setGeneratedImage]                 = useState<string | null>(null);
   const [copiedField, setCopiedField]                       = useState<string | null>(null);
@@ -808,7 +804,27 @@ function AppInner() {
       } catch {}
       window.history.replaceState({}, "", window.location.pathname);
     } else if (canceled) {
-      showToast("error", "Payment was canceled. No charges made.");
+      // Restore work state even when cancelled
+      try {
+        const raw = localStorage.getItem("pinviral_work_state");
+        if (raw) {
+          const w = JSON.parse(raw);
+          if (w.productName)       setProductName(w.productName);
+          if (w.strategy)          setStrategy(JSON.parse(w.strategy));
+          if (w.productAnalysis)   setProductAnalysis(JSON.parse(w.productAnalysis));
+          if (w.uploadedImage)     setUploadedImage(w.uploadedImage);
+          if (w.generatedImage)    setGeneratedImage(w.generatedImage);
+          if (w.selectedAngleIndex !== undefined) setSelectedAngleIndex(w.selectedAngleIndex);
+          if (w.selectedEnvId)     setSelectedEnvId(w.selectedEnvId);
+          if (w.editableHeadline)  setEditableHeadline(w.editableHeadline);
+          if (w.editableSubtext)   setEditableSubtext(w.editableSubtext);
+          if (w.editableCTA)       setEditableCTA(w.editableCTA);
+          if (w.editableAltText)   setEditableAltText(w.editableAltText);
+          if (w.animationPrompt)   setAnimationPrompt(w.animationPrompt);
+          localStorage.removeItem("pinviral_work_state");
+        }
+      } catch {}
+      showToast("info", "Payment was canceled. Your work has been restored.");
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -920,6 +936,7 @@ function AppInner() {
     setError(null);
     try {
       // Get the priceId from our stored stripe prices
+      const priceKey = topupKey ? `topup_${topupKey}` : `${planKey}_${billing}`;
       const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
       let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey] || (stripe.priceIds as any)?.[planKey];
 
@@ -935,6 +952,23 @@ function AppInner() {
       }
       if (!priceId) throw new Error("Price not found. Please contact support.");
 
+      // Save work state before leaving — restored on return regardless of payment outcome
+      try {
+        const ws: any = { productName };
+        if (strategy)         ws.strategy         = JSON.stringify(strategy);
+        if (productAnalysis)  ws.productAnalysis  = JSON.stringify(productAnalysis);
+        if (uploadedImage)    ws.uploadedImage     = uploadedImage;
+        if (generatedImage)   ws.generatedImage    = generatedImage;
+        if (selectedAngleIndex !== null) ws.selectedAngleIndex = selectedAngleIndex;
+        if (selectedEnvId)    ws.selectedEnvId     = selectedEnvId;
+        if (editableHeadline) ws.editableHeadline  = editableHeadline;
+        if (editableSubtext)  ws.editableSubtext   = editableSubtext;
+        if (editableCTA)      ws.editableCTA       = editableCTA;
+        if (editableAltText)  ws.editableAltText   = editableAltText;
+        if (animationPrompt)  ws.animationPrompt   = animationPrompt;
+        localStorage.setItem("pinviral_work_state", JSON.stringify(ws));
+      } catch {}
+
       const url = await createCheckoutSession({
         priceId,
         planKey,
@@ -949,43 +983,6 @@ function AppInner() {
     } finally {
       setCheckoutLoading(null);
     }
-  };
-
-  // -- Generate title/description/alttext per scene environment --------------
-  const generateSceneCopy = async (env: EnvironmentOption, angle: ViralAngle, pName: string) => {
-    setIsGenSceneCopy(true);
-    setSceneCopy(null);
-    try {
-      const prompt = `You are a Pinterest SEO expert. For the product "${pName}", generate copy for a pin featuring this scene: "${env.label}" (${env.mood} mood).
-
-Based on this angle: "${angle.psychology}"
-
-Return ONLY a JSON object:
-{
-  "title": "compelling pin title max 100 chars, different from generic titles",
-  "description": "120-200 word SEO-optimized Pinterest description with keywords",
-  "altText": "concise image alt text for accessibility, 1-2 sentences"
-}`;
-
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, jsonMode: true }),
-      });
-      const data = await res.json();
-      if (data.text) {
-        try {
-          const parsed = JSON.parse(data.text);
-          if (parsed.title && parsed.description) {
-            setSceneCopy(parsed);
-            // Also update the editable fields
-            setEditableHeadline(parsed.title);
-            setEditableAltText(parsed.altText || "");
-          }
-        } catch {}
-      }
-    } catch {}
-    finally { setIsGenSceneCopy(false); }
   };
 
   // -- Stripe Customer Portal ------------------------------------------------
@@ -1182,14 +1179,10 @@ const geminiRest = async (prompt: string, config?: any, parts?: any[]): Promise<
   // -- Pinterest API ------------------------------------------------------
   const PINTEREST_CLIENT_ID = readEnv("PINTEREST_CLIENT_ID") || readEnv("PINTEREST_APP_ID") || "";
   const connectPinterest = () => {
-    if (!PINTEREST_CLIENT_ID) {
-      showToast("error", "Pinterest Client ID not configured. Add PINTEREST_CLIENT_ID to your .env file.");
-      return;
-    }
-    const redirect = encodeURIComponent(window.location.origin + window.location.pathname);
-    const scope = "boards:read,pins:write";
-    window.location.href = `https://www.pinterest.com/oauth/?client_id=${PINTEREST_CLIENT_ID}&redirect_uri=${redirect}&response_type=code&scope=${scope}&state=pinterest_connect`;
+    // Open Pinterest directly — user logs in to their own account
+    window.open("https://www.pinterest.com", "_blank", "noopener,noreferrer");
   };
+
   const fetchPinterestBoards = async (token: string) => {
     try {
       const r = await fetch("https://api.pinterest.com/v5/boards?page_size=25", {
@@ -2139,6 +2132,13 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
               </div>
             </div>
             <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe · Cancel anytime</p>
+            {/* Quit button — always returns to working state */}
+            <button
+              onClick={()=>{ setShowPricingModal(false); setShowUpgradeModal(false); }}
+              className="w-full py-3 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors text-center"
+            >
+              ✕ Continue without upgrading
+            </button>
           </div>
         </motion.div>
       </div>
@@ -2416,14 +2416,7 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Choose a Scene</p>
                               {productAnalysis.environments.map((env,i)=>(
                                 <motion.button key={env.id} initial={{opacity:0,x:-6}} animate={{opacity:1,x:0}} transition={{delay:i*0.04}}
-                                  onClick={()=>{
-                                    setSelectedEnvId(env.id);
-                                    setShowCustomEnv(false);
-                                    setSceneCopy(null);
-                                    if (strategy && selectedAngleIndex !== null) {
-                                      generateSceneCopy(env, strategy.angles[selectedAngleIndex], productName);
-                                    }
-                                  }}
+                                  onClick={()=>{setSelectedEnvId(env.id);setShowCustomEnv(false);}}
                                   className={cn("w-full flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all hover:scale-[1.01]",selectedEnvId===env.id&&!showCustomEnv?"border-violet-500 bg-violet-50 shadow-md shadow-violet-100":"border-slate-100 bg-slate-50 hover:border-violet-200")}>
                                   <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-600 text-white":"bg-white text-slate-400")}>{ENV_ICONS[env.icon]||<Camera size={13}/>}</div>
                                   <div className="flex-1 min-w-0"><div className="flex items-center gap-2 mb-0.5"><p className="font-black text-slate-900 text-xs">{env.label}</p><span className={cn("px-1.5 py-0.5 text-[9px] font-black rounded-full uppercase",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-200 text-violet-700":"bg-slate-200 text-slate-500")}>{env.mood}</span></div><p className="text-[10px] text-slate-500 font-medium line-clamp-1">{env.prompt}</p></div>
@@ -2446,56 +2439,6 @@ Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
                     </AnimatePresence>
                   </div>
                 </StepCard>
-
-                {/* Scene Copy Panel — shown when env is selected and copy generated */}
-                {(isGenSceneCopy || sceneCopy) && (
-                  <div className="bg-white rounded-[2rem] border border-violet-200 shadow-sm overflow-hidden">
-                    <div className="flex items-center gap-3 px-5 pt-5 pb-3 border-b border-violet-100">
-                      <div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Sparkles size={15}/></div>
-                      <p className="font-black text-slate-900 text-sm">Scene Copy</p>
-                      <span className="text-[9px] font-black text-violet-600 bg-violet-100 px-2 py-0.5 rounded-full uppercase tracking-widest">Auto-generated for this scene</span>
-                    </div>
-                    {isGenSceneCopy ? (
-                      <div className="flex items-center gap-3 p-5 text-violet-600 text-sm font-medium">
-                        <Loader2 size={15} className="animate-spin"/><span>Generating copy for this scene...</span>
-                      </div>
-                    ) : sceneCopy ? (
-                      <div className="p-5 space-y-4">
-                        {/* Title */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pin Title</p>
-                            <button onClick={()=>copyToClipboard(sceneCopy.title,"sceneTitle")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneTitle"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
-                          </div>
-                          <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl">
-                            <p className="text-rose-800 text-sm font-bold">{sceneCopy.title}</p>
-                          </div>
-                        </div>
-                        {/* Description */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">SEO Description</p>
-                            <button onClick={()=>copyToClipboard(sceneCopy.description,"sceneDesc")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneDesc"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
-                          </div>
-                          <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl">
-                            <p className="text-indigo-800 text-xs leading-relaxed">{sceneCopy.description}</p>
-                          </div>
-                        </div>
-                        {/* Alt Text */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Alt Text</p>
-                            <button onClick={()=>copyToClipboard(sceneCopy.altText,"sceneAlt")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="sceneAlt"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button>
-                          </div>
-                          <div className="bg-slate-50 border border-slate-100 p-3 rounded-2xl">
-                            <p className="text-slate-600 text-xs leading-relaxed">{sceneCopy.altText}</p>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-400 text-center">Click a different scene above to generate new copy for that scene</p>
-                      </div>
-                    ) : null}
-                  </div>
-                )}
 
                 {/* Step 3 · Copy & SEO */}
                 <StepCard number={3} title="Copy & SEO Content" subtitle="Headlines, description and tags ready to copy" badge="Auto-generated">
