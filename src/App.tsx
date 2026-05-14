@@ -2,3015 +2,1004 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * -- .env variables expected ------------------------------------------------
- *  STRIPE_SECRET_KEY=sk_test_...
- *  STRIPE_PUBLISHABLE_KEY=pk_test_...
- *  STRIPE_PRICE_STARTER_MONTHLY=price_...   (optional · auto-created if absent)
- *  STRIPE_PRICE_STARTER_ANNUAL=price_...
- *  STRIPE_PRICE_PRO_MONTHLY=price_...
- *  STRIPE_PRICE_PRO_ANNUAL=price_...
- *  STRIPE_PRICE_SCALE_MONTHLY=price_...
- *  STRIPE_PRICE_SCALE_ANNUAL=price_...
- *  STRIPE_PRICE_AGENCY_MONTHLY=price_...
- *  STRIPE_PRICE_AGENCY_ANNUAL=price_...
- *  STRIPE_PRICE_TOPUP_50IMG=price_...
- *  STRIPE_PRICE_TOPUP_10VID=price_...
- *  STRIPE_PRICE_TOPUP_BUNDLE_S=price_...
- *  STRIPE_PRICE_TOPUP_BUNDLE_M=price_...
- *  STRIPE_PRICE_TOPUP_BUNDLE_L=price_...
- *  API_KEY=...  or  GEMINI_API_KEY=...
- *  PINTEREST_CLIENT_ID=...   (from Pinterest Developer portal → your app)
- * --------------------------------------------------------------------------
+ * App 1 UI (PinMotionAI design) + Vercel backend API routing.
+ * All AI calls go through /api/generate, /api/image, /api/video.
+ * No direct Gemini SDK usage — the backend handles keys and model selection.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { GoogleGenAI, Type } from "@google/genai";
+import { useState, useEffect, useRef } from "react";
 import { toPng } from "html-to-image";
 import {
-  Trash2, ArrowLeft,
   Sparkles, Copy, Check, Image as ImageIcon, Loader2, ArrowRight,
-  Upload, Download, RefreshCw, Zap, Search, Video, ExternalLink,
-  Wand2, AlertCircle, Star, Plus, Hash, Accessibility, TrendingUp,
-  Lock, Shuffle, Sun, Moon, Leaf, Home, Camera, Droplets, MapPin,
-  Eye, Mic, Volume2, FileText, ChevronDown, ChevronUp, Play,
-  CreditCard, X, ShieldCheck, CheckCircle2, Key, Settings,
-  User, LogOut, Crown, BarChart2, RefreshCcw, ExternalLink as Portal,
-  Gift, Zap as Flash
+  Upload, Download, RefreshCw, Zap, Target, Search, Video,
+  ExternalLink, Wand2, Eye, AlertCircle, Star, Palette, Plus,
+  Hash, Accessibility,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-
-const isDev = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-const devlog = { warn: (...a: any[]) => { if (isDev) console.warn(...a); }, log: (...a: any[]) => { if (isDev) console.log(...a); }, error: (...a: any[]) => { if (isDev) console.error(...a); } };
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-declare global {
-  interface Window {
-    aistudio?: { hasSelectedApiKey: () => Promise<boolean>; openSelectKey: () => Promise<void>; };
-  }
-}
-
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
-// Cost-optimised: no retries by default. Every failed call costs money.
-// Only retries once on genuine 503 service unavailability.
-// 429 = quota/rate-limit -> throw immediately, never retry.
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 1, initialDelay = 2000): Promise<T> {
-  let lastError: any;
-  for (let i = 0; i < maxRetries; i++) {
-    try { return await fn(); } catch (err: any) {
-      lastError = err;
-      const msg = err.message || String(err);
-      // Never retry quota errors - throw immediately to user
-      if (msg.includes("429") || msg.includes("Too Many") || msg.includes("RESOURCE_EXHAUSTED")) break;
-      // Only retry genuine service unavailability, once, with fixed delay
-      if (!(msg.includes("503") || msg.includes("UNAVAILABLE")) || i === maxRetries - 1) break;
-      await new Promise(r => setTimeout(r, initialDelay));
-    }
-  }
-  throw lastError;
-}
-
-// -- Types ---------------------------------------------------------------------
-
-interface ViralAngle {
-  title: string; hook: string; psychology: string; headlines: string[];
-  subtext: string[]; cta: string; pinDescription: string; hashtags: string[];
-  altText: string; animationPrompt: string; aiImagePrompt: string;
-}
-interface PinStrategy { angles: ViralAngle[]; }
-interface EnvironmentOption { id: string; label: string; icon: string; mood: string; prompt: string; }
-interface ProductAnalysis { productDescription: string; keyVisualDetails: string; environments: EnvironmentOption[]; }
-interface VoiceoverScript { tone: string; duration: string; script: string; hooks: string[]; }
-type VoiceTone = "energetic" | "calm" | "luxury" | "trendy" | "asmr";
-
-// -- SaaS session (persisted to localStorage) ----------------------------------
-interface UserSession {
-  id?: string;                   // Supabase user UUID
-  plan: string;                  // "free" | "starter" | "pro" | "scale" | "agency"
-  billing: "monthly" | "annual";
-  imagesLeft: number;
-  videosLeft: number;
-  imagesTotal: number;
-  videosTotal: number;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-  email?: string;
-  activatedAt?: string;
-  expiresAt?: string;            // ISO date of next renewal
-  topupHistory: { date: string; label: string; amount: number }[];
-}
-
-interface StripePriceIds {
-  starter_monthly: string; starter_annual: string;
-  pro_monthly: string;     pro_annual: string;
-  scale_monthly: string;   scale_annual: string;
-  agency_monthly: string;  agency_annual: string;
-  topup_50img: string;     topup_10vid: string;
-  topup_bundle_s: string;  topup_bundle_m: string;
-  topup_bundle_l: string;
-}
-
-interface StripeRuntime {
-  secretKey: string; publishableKey: string;
-  priceIds: Partial<StripePriceIds>;
-  ready: boolean; keysPresent: boolean;
-}
-
-// -- Env reader ----------------------------------------------------------------
-
-// Clear any cached old API keys that may cause 404s
-try { localStorage.removeItem("pinviral_gemini_key"); } catch {}
-
-function readEnv(key: string): string {
-  // Vite (Vercel) exposes VITE_ vars via import.meta.env
-  const vite = (typeof import.meta !== "undefined" && (import.meta as any).env)
-    ? (import.meta as any).env as Record<string, string>
-    : {} as Record<string, string>;
-  // process.env fallback for AI Studio / Node / CRA
-  const e = (typeof process !== "undefined" ? process.env : {}) as Record<string, string>;
-
-  // localStorage override — user-pasted key always wins for GEMINI_API_KEY / API_KEY
-  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && typeof localStorage !== "undefined") {
-    const stored = localStorage.getItem("_pv_gemini_key") || "";
-    if (stored && stored.startsWith("AIza")) return stored;
-  }
-
-  const raw = (
-    vite[`VITE_${key}`]   ||
-    vite[key]             ||
-    e[key]                ||
-    e[`VITE_${key}`]      ||
-    e[`REACT_APP_${key}`] ||
-    ""
-  );
-  // Reject anything that is not a real Gemini API key (starts with AIza)
-  if ((key === "GEMINI_API_KEY" || key === "API_KEY") && raw && !raw.startsWith("AIza")) return "";
-  return raw;
-}
-
-// Save / clear user-provided Gemini key
-function saveGeminiKey(key: string) {
-  try { localStorage.setItem("_pv_gemini_key", key.trim()); } catch {}
-}
-function clearGeminiKey() {
-  try { localStorage.removeItem("_pv_gemini_key"); } catch {}
-}
-function getSavedGeminiKey(): string {
-  try { return localStorage.getItem("_pv_gemini_key") || ""; } catch { return ""; }
-}
-
-function readStripeFromEnv(): StripeRuntime {
-  const secretKey = readEnv("STRIPE_SECRET_KEY");
-  const publishableKey = readEnv("STRIPE_PUBLISHABLE_KEY");
-  const priceIds: Partial<StripePriceIds> = {
-    starter_monthly: readEnv("STRIPE_PRICE_STARTER_MONTHLY"),
-    starter_annual:  readEnv("STRIPE_PRICE_STARTER_ANNUAL"),
-    pro_monthly:     readEnv("STRIPE_PRICE_PRO_MONTHLY"),
-    pro_annual:      readEnv("STRIPE_PRICE_PRO_ANNUAL"),
-    scale_monthly:   readEnv("STRIPE_PRICE_SCALE_MONTHLY"),
-    scale_annual:    readEnv("STRIPE_PRICE_SCALE_ANNUAL"),
-    agency_monthly:  readEnv("STRIPE_PRICE_AGENCY_MONTHLY"),
-    agency_annual:   readEnv("STRIPE_PRICE_AGENCY_ANNUAL"),
-    topup_50img:     readEnv("STRIPE_PRICE_TOPUP_50IMG"),
-    topup_10vid:     readEnv("STRIPE_PRICE_TOPUP_10VID"),
-    topup_bundle_s:  readEnv("STRIPE_PRICE_TOPUP_BUNDLE_S"),
-    topup_bundle_m:  readEnv("STRIPE_PRICE_TOPUP_BUNDLE_M"),
-    topup_bundle_l:  readEnv("STRIPE_PRICE_TOPUP_BUNDLE_L"),
-  };
-  Object.keys(priceIds).forEach(k => { if (!(priceIds as any)[k]) delete (priceIds as any)[k]; });
-  const keysPresent = !!(secretKey && publishableKey);
-  const ready = keysPresent && Object.keys(priceIds).length === 13;
-  return { secretKey, publishableKey, priceIds, ready, keysPresent };
-}
-
-// -- Constants -----------------------------------------------------------------
-
-const PLAN_DEFS: Record<string, {
-  monthly: number; annual: number; images: number; videos: number;
-  emoji: string; desc: string; features: string[]; bonus?: string; popular?: boolean; color: string;
-}> = {
-  free:    { monthly: 0,   annual: 0,   images: 2,    videos: 0,   emoji: "🆓", desc: "Try before you commit",          features: ["2 AI images","5 scene environments","Pinterest strategy","Voiceover scripts"], color: "slate" },
-  starter: { monthly: 29,  annual: 20,  images: 50,   videos: 3,   emoji: "🌱", desc: "For beginners testing products", features: ["50 AI images/mo","3 video pins/mo","Pinterest strategy","5 auto scenes","Voiceover scripts"], color: "emerald" },
-  pro:     { monthly: 59,  annual: 41,  images: 150,  videos: 15,  emoji: "⭐", desc: "For serious sellers & creators", features: ["150 AI images/mo","15 video pins/mo","Full strategy system","All scene environments","All voiceover tones","Faster generation"], bonus: "Best value for active sellers", popular: true, color: "rose" },
-  scale:   { monthly: 119, annual: 83,  images: 400,  videos: 50,  emoji: "🚀", desc: "For power users & brands",       features: ["400 AI images/mo","50 video pins/mo","Everything in Pro","Extended animation","Priority processing"], color: "violet" },
-  agency:  { monthly: 199, annual: 139, images: 1200, videos: 150, emoji: "🏢", desc: "For agencies & white-label",     features: ["1,200 AI images/mo","150 video pins/mo","Everything in Scale","White-label exports","Team seats (5)","API access"], color: "indigo" },
-};
-
-const TOPUP_PACKS = [
-  { key: "topup_50img",    label: "50 Images",              images: 50,  videos: 0,  price: 12, highlight: false },
-  { key: "topup_10vid",    label: "10 Videos",              images: 0,   videos: 10, price: 19, highlight: false },
-  { key: "topup_bundle_s", label: "50 Images + 5 Videos",   images: 50,  videos: 5,  price: 25, highlight: true  },
-  { key: "topup_bundle_m", label: "100 Images + 15 Videos", images: 100, videos: 15, price: 49, highlight: false },
-  { key: "topup_bundle_l", label: "250 Images + 40 Videos", images: 250, videos: 40, price: 99, highlight: false },
-];
-
-const VOICE_TONES: { id: VoiceTone; label: string; desc: string; emoji: string }[] = [
-  { id: "energetic", label: "Energetic", desc: "High energy, exciting, action-driven",  emoji: "⭐" },
-  { id: "calm",      label: "Calm",      desc: "Soft, reassuring, problem-solving",      emoji: "😌" },
-  { id: "luxury",    label: "Luxury",    desc: "Elegant, aspirational, premium feel",    emoji: "💎" },
-  { id: "trendy",    label: "Trendy",    desc: "Gen Z, viral, conversational & fun",     emoji: "✨" },
-  { id: "asmr",      label: "ASMR",      desc: "Whispered, intimate, sensory detail",    emoji: "🎙️" },
-];
-
-const ENV_ICONS: Record<string, React.ReactNode> = {
-  sun: <Sun size={14} />, moon: <Moon size={14} />, leaf: <Leaf size={14} />,
-  home: <Home size={14} />, camera: <Camera size={14} />, droplets: <Droplets size={14} />,
-  mappin: <MapPin size={14} />, sparkles: <Sparkles size={14} />,
-};
-
-const BASE_REALISTIC_MOTION = "Create subtle, realistic motion: slight camera zoom (Ken Burns effect), soft lighting movement, gentle shadow shift, no distortion of the product, keep product shape 100% accurate.";
-const SESSION_KEY   = "pinviral_session_v2";
-const STRIPE_SK_KEY = "pinviral_stripe_sk";
-const STRIPE_PX_KEY = "pinviral_stripe_px";
-// Abuse-prevention keys · deliberately obscured names
-const FP_KEY        = "_pv_fp";           // fingerprint id
-const FP_USED_KEY   = "_pv_fpu";          // fingerprint ? free-used flag
-const EMAIL_SET_KEY = "_pv_eu";           // set of emails that used free
-const IDB_DB        = "_pvs";             // IndexedDB database name
-const IDB_STORE     = "kv";
-
-// -- Browser fingerprinting ----------------------------------------------------
-async function getBrowserFingerprint(): Promise<string> {
-  const parts: string[] = [];
-
-  // Canvas fingerprint
-  try {
-    const c = document.createElement("canvas");
-    const ctx = c.getContext("2d")!;
-    ctx.textBaseline = "top";
-    ctx.font = "14px 'Arial'";
-    ctx.fillStyle = "#f60";
-    ctx.fillRect(125, 1, 62, 20);
-    ctx.fillStyle = "#069";
-    ctx.fillText("PinViral", 2, 15);
-    ctx.fillStyle = "rgba(102,204,0,0.7)";
-    ctx.fillText("PinViral", 4, 17);
-    parts.push(c.toDataURL().slice(-64));
-  } catch {}
-
-  // Audio fingerprint - skip silently if browser blocks autoplay (no user gesture yet)
-  try {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (AudioCtx) {
-      const ctx = new AudioCtx();
-      if (ctx.state !== "suspended") {
-        const osc = ctx.createOscillator();
-        const analyser = ctx.createAnalyser();
-        const gain = ctx.createGain();
-        gain.gain.value = 0;
-        osc.connect(analyser);
-        analyser.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(0);
-        const buf = new Float32Array(analyser.frequencyBinCount);
-        analyser.getFloatFrequencyData(buf);
-        osc.stop();
-        parts.push(buf.slice(0, 8).join(","));
-      }
-      ctx.close().catch(() => {});
-    }
-  } catch {}
-
-  // Navigator properties
-  parts.push([
-    navigator.language,
-    navigator.hardwareConcurrency,
-    (navigator as any).deviceMemory || 0,
-    screen.width, screen.height, screen.colorDepth,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-    navigator.platform,
-  ].join("|"));
-
-  const str = parts.join("##");
-  // Simple hash
-  let h = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = (h * 0x01000193) >>> 0;
-  }
-  return h.toString(16).padStart(8, "0");
-}
-
-// -- IndexedDB helpers (survives localStorage.clear()) ------------------------
-function idbOpen(): Promise<IDBDatabase> {
-  return new Promise((res, rej) => {
-    const req = indexedDB.open(IDB_DB, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-    req.onsuccess = () => res(req.result);
-    req.onerror   = () => rej(req.error);
-  });
-}
-async function idbGet(key: string): Promise<any> {
-  try {
-    const db = await idbOpen();
-    return new Promise((res, rej) => {
-      const tx = db.transaction(IDB_STORE, "readonly");
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => res(req.result ?? null);
-      req.onerror   = () => rej(req.error);
-    });
-  } catch { return null; }
-}
-async function idbSet(key: string, value: any): Promise<void> {
-  try {
-    const db = await idbOpen();
-    return new Promise((res, rej) => {
-      const tx = db.transaction(IDB_STORE, "readwrite");
-      tx.objectStore(IDB_STORE).put(value, key);
-      tx.oncomplete = () => res();
-      tx.onerror    = () => rej(tx.error);
-    });
-  } catch {}
-}
-
-// -- Free-plan abuse checks ----------------------------------------------------
-async function isFreePlanBlocked(email?: string): Promise<{ blocked: boolean; reason: string }> {
-  const fp = await getBrowserFingerprint();
-  // Store fingerprint for later use
-  try { localStorage.setItem(FP_KEY, fp); } catch {}
-  await idbSet(FP_KEY, fp);
-
-  // 1. Check fingerprint in both storage layers
-  const fpUsedLS  = localStorage.getItem(`${FP_USED_KEY}_${fp}`);
-  const fpUsedIDB = await idbGet(`${FP_USED_KEY}_${fp}`);
-  if (fpUsedLS === "1" || fpUsedIDB === "1") {
-    return { blocked: true, reason: "free_fp" };
-  }
-
-  // 2. Check email
-  if (email) {
-    const norm = email.trim().toLowerCase();
-    try {
-      const set: string[] = JSON.parse(localStorage.getItem(EMAIL_SET_KEY) || "[]");
-      if (set.includes(norm)) return { blocked: true, reason: "free_email" };
-    } catch {}
-    const idbEmails: string[] = (await idbGet(EMAIL_SET_KEY)) || [];
-    if (idbEmails.includes(norm)) return { blocked: true, reason: "free_email" };
-  }
-
-  return { blocked: false, reason: "" };
-}
-
-async function markFreeTrialUsed(email?: string) {
-  const fp = await getBrowserFingerprint();
-  // Write to both layers
-  try { localStorage.setItem(`${FP_USED_KEY}_${fp}`, "1"); } catch {}
-  await idbSet(`${FP_USED_KEY}_${fp}`, "1");
-
-  if (email) {
-    const norm = email.trim().toLowerCase();
-    try {
-      const set: string[] = JSON.parse(localStorage.getItem(EMAIL_SET_KEY) || "[]");
-      if (!set.includes(norm)) { set.push(norm); localStorage.setItem(EMAIL_SET_KEY, JSON.stringify(set)); }
-    } catch {}
-    const idbEmails: string[] = (await idbGet(EMAIL_SET_KEY)) || [];
-    if (!idbEmails.includes(norm)) await idbSet(EMAIL_SET_KEY, [...idbEmails, norm]);
-  }
-}
-
-
-// -- Default session -----------------------------------------------------------
-
-const defaultSession = (): UserSession => ({
-  plan: "free", billing: "monthly",
-  imagesLeft: 2, videosLeft: 0, imagesTotal: 2, videosTotal: 0,
-  topupHistory: [],
-});
-
-// -- Stripe via backend API (/api/checkout) — secret key never in browser ----
-
-async function createCheckoutSession(params: {
-  priceId: string;
-  planKey: string;
-  billing: "monthly" | "annual";
-  topupKey?: string;
-  email?: string;
-}): Promise<string> {
-  const origin = window.location.origin;
-  const res = await fetch("/api/checkout", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      ...params,
-      successUrl: `${origin}/?checkout=success`,
-      cancelUrl:  `${origin}/?checkout=cancel`,
-    }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error || "Checkout failed");
-  return data.url; // Stripe hosted checkout URL
-}
-
-// -- StepCard ------------------------------------------------------------------
-
-function StepCard({ number, title, subtitle, badge, children, dimmed = false }:
-  { number: number; title: string; subtitle?: string; badge?: string; children: React.ReactNode; dimmed?: boolean }) {
-  return (
-    <motion.section initial={{ opacity: 0, y: 14 }} animate={{ opacity: dimmed ? 0.38 : 1, y: 0 }}
-      transition={{ delay: number * 0.05 }} className={cn(dimmed && "pointer-events-none select-none")}>
-      <div className="flex items-center gap-3 mb-5">
-        <div className={cn("w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shadow-lg shrink-0",
-          number === 1 ? "bg-rose-600 text-white shadow-rose-200" : "bg-slate-900 text-white")}>{number}</div>
-        <div>
-          <h3 className="text-xl font-black text-slate-900 tracking-tight leading-none">{title}</h3>
-          {subtitle && <p className="text-xs text-slate-400 font-medium mt-0.5">{subtitle}</p>}
-        </div>
-        {badge && <span className="ml-auto px-3 py-1 bg-rose-50 text-rose-600 text-[10px] font-black rounded-full uppercase tracking-tighter border border-rose-100 shrink-0">{badge}</span>}
-      </div>
-      <div className="ml-[52px]">{children}</div>
-    </motion.section>
-  );
-}
-
-// -- App -----------------------------------------------------------------------
-
-class ErrorBoundary extends React.Component<{children:React.ReactNode},{hasError:boolean;message:string}> {
-  constructor(props:any){super(props);this.state={hasError:false,message:""};}
-  static getDerivedStateFromError(err:Error){return{hasError:true,message:err.message};}
-  render(){
-    if(this.state.hasError)return(
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-8">
-        <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 text-center space-y-4">
-          <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto text-3xl">⚠️</div>
-          <h2 className="text-xl font-black text-slate-900">Something went wrong</h2>
-          <p className="text-sm text-slate-500 font-mono bg-slate-50 p-3 rounded-xl text-left break-words">{this.state.message}</p>
-          <button onClick={()=>{this.setState({hasError:false,message:""});window.location.reload();}}
-            className="px-6 py-3 bg-rose-600 text-white font-black rounded-2xl hover:bg-rose-700 transition-all">Reload App</button>
-        </div>
-      </div>
-    );
-    return this.props.children;
-  }
-}
-
-function AppInner() {
-  // SaaS session
-  const [session, setSession]                               = useState<UserSession>(defaultSession());
-  // AI / app state
-  const [productName, setProductName]                       = useState("");
-  const [isLoading, setIsLoading]                           = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage]           = useState(false);
-  const [isAnimating, setIsAnimating]                       = useState(false);
-  const [isAnalyzingProduct, setIsAnalyzingProduct]         = useState(false);
-  const [isAnalyzingSocialProof, setIsAnalyzingSocialProof] = useState(false);
-  const [urlImages, setUrlImages]                           = useState<string[]>([]);
-  const [isFetchingUrlImages, setIsFetchingUrlImages]       = useState(false);
-  const [selectedUrlImageIndex, setSelectedUrlImageIndex]   = useState<number | null>(null);
-  const [inputWasUrl, setInputWasUrl]                       = useState(false);
-  const [extensionPrompt, setExtensionPrompt]             = useState("");
-  const [animatedVideoUrl, setAnimatedVideoUrl]             = useState<string | null>(null);
-  const [videoMimeType, setVideoMimeType]                   = useState<string>("video/mp4");
-  const [showExtendModal, setShowExtendModal]               = useState(false);
-  const [extendCustomPrompt, setExtendCustomPrompt]         = useState("");
-  const [extendCount, setExtendCount]                       = useState(0);
-  const [lastVideoB64, setLastVideoB64]                     = useState<{data:string;mime:string}|null>(null);
-  const [extensionHistory, setExtensionHistory]             = useState<string[]>([]);
-  const MAX_EXTENSIONS = 3;
-  const [lastVideoOperation, setLastVideoOperation]         = useState<any>(null);
-  const [isExtending, setIsExtending]                       = useState(false);
-  const [animationPrompt, setAnimationPrompt]               = useState("");
-  const [hasApiKey, setHasApiKey]                           = useState(false);
-  const [strategy, setStrategy]                             = useState<PinStrategy | null>(null);
-  const [selectedAngleIndex, setSelectedAngleIndex]         = useState<number | null>(null);
-  const [overlayPosition, setOverlayPosition]               = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging]                         = useState(false);
-  const [editableHeadline, setEditableHeadline]             = useState("");
-  const [editableSubtext, setEditableSubtext]               = useState("");
-  const [editableCTA, setEditableCTA]                       = useState("");
-  const [editableAltText, setEditableAltText]               = useState("");
-  const [uploadedImage, setUploadedImage]                   = useState<string | null>(null);
-  const [generatedImage, setGeneratedImage]                 = useState<string | null>(null);
-  const [copiedField, setCopiedField]                       = useState<string | null>(null);
-  const [error, setError]                                   = useState<string | null>(null);
-  const [overlayScale, setOverlayScale]                     = useState(1);
-  const [socialProof, setSocialProof]                       = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
-  const [productUrl, setProductUrl]                         = useState("");
-  const [billingCycle, setBillingCycle]                     = useState<"monthly" | "annual">("monthly");
-  const [productAnalysis, setProductAnalysis]               = useState<ProductAnalysis | null>(null);
-  const [selectedEnvId, setSelectedEnvId]                   = useState<string | null>(null);
-  const [customEnvPrompt, setCustomEnvPrompt]               = useState("");
-  const [showCustomEnv, setShowCustomEnv]                   = useState(false);
-  const [analysisError, setAnalysisError]                   = useState<string | null>(null);
-  const [voiceoverScript, setVoiceoverScript]               = useState<VoiceoverScript | null>(null);
-  const [isGeneratingVoiceover, setIsGeneratingVoiceover]   = useState(false);
-  const [selectedVoiceTone, setSelectedVoiceTone]           = useState<VoiceTone>("energetic");
-  const [voiceoverExpanded, setVoiceoverExpanded]           = useState(true);
-  // UI modals
-  const [showUpgradeModal, setShowUpgradeModal]             = useState(false);
-  const [showAccountModal, setShowAccountModal]             = useState(false);
-  const [showStripeSetup, setShowStripeSetup]               = useState(false);
-  const [showPricingModal, setShowPricingModal]             = useState(false);
-  // Rich activation toast
-  const [activationToast, setActivationToast]               = useState<{ emoji: string; title: string; lines: string[] } | null>(null);
-  // Stripe
-  const [stripe, setStripe]                                 = useState<StripeRuntime>({ secretKey: "", publishableKey: "", priceIds: {}, ready: false, keysPresent: false });
-  const [checkoutLoading, setCheckoutLoading]               = useState<string | null>(null);
-  const [portalLoading, setPortalLoading]                   = useState(false);
-  const [paymentToast, setPaymentToast]                     = useState<{ type: "success"|"error"; message: string } | null>(null);
-  const [isCreatingPrices, setIsCreatingPrices]             = useState(false);
-  const [creationLog, setCreationLog]                       = useState<string[]>([]);
-  const [creationError, setCreationError]                   = useState<string | null>(null);
-  const [manualSk, setManualSk]                             = useState("");
-  const [geminiKey, setGeminiKey]                           = useState(getSavedGeminiKey);
-  const [showApiKeyModal, setShowApiKeyModal]               = useState(false);
-  const [apiKeyInput, setApiKeyInput]                       = useState("");
-  const [apiKeyError, setApiKeyError]                       = useState("");
-  const [apiKeyTesting, setApiKeyTesting]                   = useState(false);
-  const [manualPk, setManualPk]                             = useState("");
-
-  // -- New feature states ----------------------------------------------------
-  const [tourStep, setTourStep]                               = useState<number>(0);        // 0=hidden,1-3=active
-  const [hasSeenTour, setHasSeenTour]                         = useState(false);
-  const [videoProgress, setVideoProgress]                     = useState(0);                // 0-100
-  const [videoProgressStep, setVideoProgressStep]             = useState("");
-  const [abVariantB, setAbVariantB]                           = useState<any>(null);        // A/B second variant
-  const [isRegenField, setIsRegenField]                       = useState<string|null>(null); // which field is regen-ing
-  const [pinterestToken, setPinterestToken]                   = useState("");               // Pinterest OAuth token
-  const [showPinterestModal, setShowPinterestModal]           = useState(false);
-  const [showScheduleModal, setShowScheduleModal]             = useState(false);
-  const [scheduleDate, setScheduleDate]                       = useState("");
-  const [scheduleBoard, setScheduleBoard]                     = useState("");
-  const [pinterestBoards, setPinterestBoards]                 = useState<{id:string;name:string}[]>([]);
-  const [isScheduling, setIsScheduling]                       = useState(false);
-  const [scheduledSuccess, setScheduledSuccess]               = useState(false);
-  const [cookieConsent, setCookieConsent]                     = useState<"accepted"|"declined"|null>(null);
-  const [showCookieBanner, setShowCookieBanner]               = useState(false);
-  const [rightsAttested, setRightsAttested]                   = useState(false);
-  const [showTermsPage, setShowTermsPage]                     = useState(false);
-  const [showPrivacyPage, setShowPrivacyPage]                 = useState(false);
-  const [showRefundPage, setShowRefundPage]                   = useState(false);
-  const [showCancelConfirm, setShowCancelConfirm]             = useState(false);
-  const [isCancelling, setIsCancelling]                       = useState(false);
-
-  const previewRef = useRef<HTMLDivElement>(null);
-
-  // -- Persist session -------------------------------------------------------
-
-  const saveSession = useCallback((s: UserSession) => {
-    setSession(s);
-    try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {}
-  }, []);
-
-  const consumeImage = () => {
-    // Optimistic local update — server deducts actual credit in /api/image
-    setSession(prev => ({ ...prev, imagesLeft: Math.max(0, prev.imagesLeft - 1) }));
-  };
-
-  const consumeVideo = () => {
-    // Optimistic local update — server deducts actual credit in /api/video
-    setSession(prev => ({ ...prev, videosLeft: Math.max(0, prev.videosLeft - 1) }));
-  };
-
-  // Sync session from Supabase via /api/user
-  const loadSession = async (email: string) => {
-    if (!email) return;
-    try {
-      const res  = await fetch("/api/user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const updated: UserSession = {
-        ...session,
-        id:           data.id,
-        email:        data.email,
-        plan:         data.plan,
-        billing:      data.billing,
-        imagesLeft:   data.imagesLeft,
-        videosLeft:   data.videosLeft,
-        imagesTotal:  data.imagesTotal,
-        videosTotal:  data.videosTotal,
-      };
-      setSession(updated);
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(updated)); } catch {}
-    } catch {}
-  };
-
-  // -- Init ------------------------------------------------------------------
-
-  useEffect(() => {
-    checkApiKey();
-
-    // First-visit tour
-    const seenTour = localStorage.getItem("_pv_tour_v2");
-    if (!seenTour) { setTimeout(()=>setTourStep(1), 700); } else { setHasSeenTour(true); }
-
-    // Cookie consent
-    const consent = localStorage.getItem("_pv_consent_v2") as "accepted"|"declined"|null;
-    if (consent) { setCookieConsent(consent); } else { setTimeout(()=>setShowCookieBanner(true), 1500); }
-
-    const init = async () => {
-      // -- Restore session --------------------------------------------------
-      let s: UserSession = defaultSession();
-      try {
-        const raw = localStorage.getItem(SESSION_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          parsed.imagesTotal = Math.max(parsed.imagesTotal || 0, parsed.imagesLeft || 0);
-          parsed.videosTotal = Math.max(parsed.videosTotal || 0, parsed.videosLeft || 0);
-          s = parsed;
-        }
-      } catch {}
-
-      // -- Sync session from Supabase (source of truth) ----------------------
-      if (s.email) {
-        try {
-          const res = await fetch("/api/user", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: s.email }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            s = {
-              ...s,
-              id:          data.id,
-              plan:        data.plan,
-              billing:     data.billing,
-              imagesLeft:  data.imagesLeft,
-              videosLeft:  data.videosLeft,
-              imagesTotal: data.imagesTotal,
-              videosTotal: data.videosTotal,
-            };
-          }
-        } catch { /* network error — keep localStorage session */ }
-      }
-
-      // -- Free plan abuse check ---------------------------------------------
-      if (s.plan === "free") {
-        const { blocked, reason } = await isFreePlanBlocked(s.email);
-        if (blocked) {
-          // They've used their free trial on this device/email · zero out images
-          s = { ...s, imagesLeft: 0, videosLeft: 0 };
-          // Trigger upgrade modal after render
-          setTimeout(() => {
-            setShowUpgradeModal(true);
-            showToast("error", reason === "free_email"
-              ? "This email has already used the free trial. Upgrade to continue."
-              : "Free trial already used on this device. Upgrade to continue.");
-          }, 800);
-        } else if (s.imagesLeft < (PLAN_DEFS.free?.images ?? 2)) {
-          // They've consumed some free images · mark the trial as started
-          await markFreeTrialUsed(s.email);
-        }
-      }
-
-      setSession(s);
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {}
-    };
-
-    init();
-
-    // -- Load Stripe ----------------------------------------------------------
-    const envStripe = readStripeFromEnv();
-    let merged = { ...envStripe };
-    try {
-      const sk = localStorage.getItem(STRIPE_SK_KEY);
-      const pk = localStorage.getItem(STRIPE_PX_KEY);
-      const savedPrices = JSON.parse(localStorage.getItem("pinviral_prices") || "{}");
-      if (!merged.secretKey && sk) merged.secretKey = sk;
-      if (!merged.publishableKey && pk) merged.publishableKey = pk;
-      merged.priceIds = { ...savedPrices, ...merged.priceIds };
-      merged.keysPresent = !!(merged.secretKey && merged.publishableKey);
-      merged.ready = merged.keysPresent && Object.keys(merged.priceIds).length === 13;
-    } catch {}
-    setStripe(merged);
-    if (merged.secretKey) setManualSk(merged.secretKey);
-    if (merged.publishableKey) setManualPk(merged.publishableKey);
-
-    // -- Auto-create prices silently if keys present but prices missing --------
-    if (merged.keysPresent && !merged.ready) {
-      setTimeout(async () => {
-        // Use merged directly · avoids stale closure on stripe state
-        const sk = merged.secretKey;
-        if (!sk) return;
-        try {
-          const newIds: Record<string, string> = { ...merged.priceIds };
-          const plans = [
-            { key:"starter", name:"PinViral Starter", monthly:2900,  annual:24000  },
-            { key:"pro",     name:"PinViral Pro",     monthly:5900,  annual:49200  },
-            { key:"scale",   name:"PinViral Scale",   monthly:11900, annual:99600  },
-            { key:"agency",  name:"PinViral Agency",  monthly:19900, annual:166800 },
-          ];
-          for (const p of plans) {
-            const mk = `${p.key}_monthly`; const ak = `${p.key}_annual`;
-            if (newIds[mk] && newIds[ak]) continue;
-            const prod = await stripePost(sk, "products", { name: p.name, "metadata[plan]": p.key });
-            if (!newIds[mk]) { const mp = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.monthly), currency:"usd", "recurring[interval]":"month" }); newIds[mk]=mp.id; }
-            if (!newIds[ak]) { const ap = await stripePost(sk, "prices", { product:prod.id, unit_amount:String(p.annual),  currency:"usd", "recurring[interval]":"year"  }); newIds[ak]=ap.id; }
-          }
-          const topups = [
-            { key:"topup_50img",    name:"PinViral Top-up: 50 Images",              amount:1200 },
-            { key:"topup_10vid",    name:"PinViral Top-up: 10 Videos",              amount:1900 },
-            { key:"topup_bundle_s", name:"PinViral Top-up: 50 Images + 5 Videos",   amount:2500 },
-            { key:"topup_bundle_m", name:"PinViral Top-up: 100 Images + 15 Videos", amount:4900 },
-            { key:"topup_bundle_l", name:"PinViral Top-up: 250 Images + 40 Videos", amount:9900 },
-          ];
-          for (const t of topups) {
-            if (newIds[t.key]) continue;
-            const prod = await stripePost(sk, "products", { name:t.name, "metadata[type]":"topup" });
-            const pr   = await stripePost(sk, "prices",   { product:prod.id, unit_amount:String(t.amount), currency:"usd" });
-            newIds[t.key] = pr.id;
-          }
-          const ready = Object.keys(newIds).length >= 13;
-          setStripe(prev => ({ ...prev, priceIds: newIds as any, ready }));
-          try { localStorage.setItem("pinviral_prices", JSON.stringify(newIds)); } catch {}
-        } catch(e) { devlog.warn("[autoInit prices]", e); }
-      }, 1500);
-    }
-
-    // -- Handle Stripe redirect ------------------------------------------------
-    const params  = new URLSearchParams(window.location.search);
-    // Pinterest OAuth callback
-    const pCode = params.get("code");
-    const pState = params.get("state");
-    if (pCode && pState === "pinterest_connect") {
-      // In production you'd exchange this code server-side for a token
-      // For now store the code and show instructions
-      localStorage.setItem("_pv_pinterest_code", pCode);
-      setPinterestToken(pCode);
-      showToast("success","Pinterest connected! You can now schedule pins.");
-      window.history.replaceState({},"",window.location.pathname);
-    }
-    const savedPinToken = localStorage.getItem("_pv_pinterest_code");
-    if (savedPinToken) { setPinterestToken(savedPinToken); fetchPinterestBoards(savedPinToken); }
-
-    const session_id = params.get("session_id");
-    const plan       = params.get("plan");
-    const billing    = params.get("billing") as "monthly"|"annual" || "monthly";
-    const canceled   = params.get("canceled");
-    const customer   = params.get("customer_id");
-    const sub        = params.get("sub_id");
-    const topup      = params.get("topup");
-    const email      = params.get("customer_email");
-
-    if (session_id && plan && !canceled) {
-      const stripeRuntime = readEnv("STRIPE_SECRET_KEY") || (() => { try { return localStorage.getItem("pinviral_stripe_sk") || ""; } catch { return ""; } })();
-
-      const fetchAndActivate = async () => {
-        let resolvedCustomer = customer;
-        let resolvedSub = sub;
-        let resolvedEmail = email;
-        if (session_id) {
-          try {
-            // Webhook will have already updated Supabase - reload session from server
-            await new Promise(r => setTimeout(r, 2000)); // give webhook time to fire
-            if (email) await loadSession(email);
-            {
-              const cs = await r.json();
-              resolvedCustomer = cs.customer || resolvedCustomer;
-              resolvedSub = cs.subscription || resolvedSub;
-              resolvedEmail = cs.customer_details?.email || cs.customer_email || resolvedEmail;
-            }
-          } catch {}
-        }
-        activatePlan(plan, billing, resolvedCustomer, resolvedSub, topup || undefined);
-        if (resolvedEmail || resolvedCustomer) {
-          setSession(prev => {
-            const updated = {
-              ...prev,
-              ...(resolvedEmail ? { email: resolvedEmail } : {}),
-              ...(resolvedCustomer ? { stripeCustomerId: resolvedCustomer } : {}),
-              ...(resolvedSub ? { stripeSubscriptionId: resolvedSub } : {}),
-            };
-            try { localStorage.setItem(SESSION_KEY, JSON.stringify(updated)); } catch {}
-            return updated;
-          });
-        }
-      };
-      fetchAndActivate();
-      try {
-        const raw = localStorage.getItem("pinviral_work_state");
-        if (raw) {
-          const w = JSON.parse(raw);
-          if (w.productName)       setProductName(w.productName);
-          if (w.productUrl)        setProductUrl(w.productUrl);
-          if (w.strategy)          setStrategy(JSON.parse(w.strategy));
-          if (w.productAnalysis)   setProductAnalysis(JSON.parse(w.productAnalysis));
-          if (w.uploadedImage)     setUploadedImage(w.uploadedImage);
-          if (w.generatedImage)    setGeneratedImage(w.generatedImage);
-          if (w.selectedAngleIndex !== null && w.selectedAngleIndex !== undefined) setSelectedAngleIndex(w.selectedAngleIndex);
-          if (w.selectedEnvId)     setSelectedEnvId(w.selectedEnvId);
-          if (w.editableHeadline)  setEditableHeadline(w.editableHeadline);
-          if (w.editableSubtext)   setEditableSubtext(w.editableSubtext);
-          if (w.editableCTA)       setEditableCTA(w.editableCTA);
-          if (w.editableAltText)   setEditableAltText(w.editableAltText);
-          if (w.animationPrompt)   setAnimationPrompt(w.animationPrompt);
-          localStorage.removeItem("pinviral_work_state");
-        }
-      } catch {}
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (canceled) {
-      try {
-        const raw = localStorage.getItem("pinviral_work_state");
-        if (raw) {
-          const w = JSON.parse(raw);
-          if (w.productName)       setProductName(w.productName);
-          if (w.strategy)          setStrategy(JSON.parse(w.strategy));
-          if (w.productAnalysis)   setProductAnalysis(JSON.parse(w.productAnalysis));
-          if (w.uploadedImage)     setUploadedImage(w.uploadedImage);
-          if (w.generatedImage)    setGeneratedImage(w.generatedImage);
-          if (w.selectedAngleIndex !== undefined) setSelectedAngleIndex(w.selectedAngleIndex);
-          if (w.selectedEnvId)     setSelectedEnvId(w.selectedEnvId);
-          if (w.editableHeadline)  setEditableHeadline(w.editableHeadline);
-          if (w.editableSubtext)   setEditableSubtext(w.editableSubtext);
-          if (w.editableCTA)       setEditableCTA(w.editableCTA);
-          if (w.editableAltText)   setEditableAltText(w.editableAltText);
-          if (w.animationPrompt)   setAnimationPrompt(w.animationPrompt);
-          localStorage.removeItem("pinviral_work_state");
-        }
-      } catch {}
-      showToast("info", "Payment canceled. Your work has been restored.");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (session.imagesLeft <= 0 && session.plan === "free") setShowUpgradeModal(true);
-  }, [session.imagesLeft]);
-
-  // -- Toast helper ----------------------------------------------------------
-
-  const showToast = (type: "success"|"error", message: string) => {
-    setPaymentToast({ type, message });
-    setTimeout(() => setPaymentToast(null), 5000);
-  };
-
-  // -- Plan activation -------------------------------------------------------
-
-  const activatePlan = (planKey: string, billing: "monthly"|"annual", customerId?: string | null, subId?: string | null, topupKey?: string) => {
-
-    // -- Top-up path -------------------------------------------------------
-    // topupKey is present when the user bought a credit pack (not a plan upgrade).
-    // planKey will be "topup" in this case · it is NOT in PLAN_DEFS intentionally.
-    if (topupKey) {
-      const pack = TOPUP_PACKS.find(p => p.key === topupKey);
-      if (!pack) { showToast("error", "Top-up pack not recognised. Contact support."); return; }
-
-      setSession(prev => {
-        const newImagesLeft = prev.imagesLeft + pack.images;
-        const newVideosLeft = prev.videosLeft + pack.videos;
-        const updated: UserSession = {
-          ...prev,
-          imagesLeft:  newImagesLeft,
-          videosLeft:  newVideosLeft,
-          imagesTotal: Math.max(prev.imagesTotal, newImagesLeft),
-          videosTotal: Math.max(prev.videosTotal, newVideosLeft),
-          topupHistory: [
-            { date: new Date().toISOString(), label: pack.label, amount: pack.price },
-            ...prev.topupHistory.slice(0, 9),
-          ],
-        };
-        try { localStorage.setItem(SESSION_KEY, JSON.stringify(updated)); } catch {}
-        return updated;
-      });
-
-      setShowUpgradeModal(false);
-      setShowAccountModal(false);
-      setShowPricingModal(false);
-      setActivationToast({
-        emoji: "🎉",
-        title: `${pack.label} Added!`,
-        lines: [
-          pack.images > 0 ? `+${pack.images} image credits` : "",
-          pack.videos > 0 ? `+${pack.videos} video credits` : "",
-          "Your quota has been updated.",
-        ].filter(Boolean),
-      });
-      setTimeout(() => setActivationToast(null), 6000);
-      return;
-    }
-
-    // -- Subscription plan upgrade path -----------------------------------
-    const plan = PLAN_DEFS[planKey];
-    if (!plan) { showToast("error", `Unknown plan: ${planKey}`); return; }
-
-    setSession(prev => {
-      const now   = new Date();
-      const renew = new Date(now);
-      if (billing === "annual") renew.setFullYear(renew.getFullYear() + 1);
-      else renew.setMonth(renew.getMonth() + 1);
-
-      const updated: UserSession = {
-        ...prev,
-        plan: planKey,
-        billing,
-        imagesLeft: plan.images,
-        videosLeft: plan.videos,
-        imagesTotal: plan.images,
-        videosTotal: plan.videos,
-        activatedAt: now.toISOString(),
-        expiresAt: renew.toISOString(),
-        stripeCustomerId: customerId || prev.stripeCustomerId,
-        stripeSubscriptionId: subId || prev.stripeSubscriptionId,
-      };
-      try { localStorage.setItem(SESSION_KEY, JSON.stringify(updated)); } catch {}
-      return updated;
-    });
-
-    showToast("success", ` ${plan.emoji} ${planKey.charAt(0).toUpperCase()+planKey.slice(1)} plan activated!`);
-    setShowUpgradeModal(false);
-    setShowAccountModal(false);
-    setShowPricingModal(false);
-    setActivationToast({
-      emoji: plan.emoji,
-      title: `${planKey.charAt(0).toUpperCase()+planKey.slice(1)} Plan Activated!`,
-      lines: [
-        `${plan.images.toLocaleString()} image credits/month`,
-        `${plan.videos} video credits/month`,
-        billing === "annual" ? "Billed annually · 30% saved 🎉" : "Monthly billing active.",
-      ],
-    });
-    setTimeout(() => setActivationToast(null), 7000);
-  };
-
-  // -- Stripe Checkout -------------------------------------------------------
-
-  const startCheckout = async (planKey: string, billing: "monthly"|"annual" = "monthly", topupKey?: string) => {
-    const lk = topupKey || `${planKey}_${billing}`;
-    setCheckoutLoading(lk);
-    setError(null);
-    try {
-      const priceKey = topupKey ? topupKey : `${planKey}_${billing}`;
-      let priceId: string | undefined = (stripe.priceIds as any)?.[priceKey] || (stripe.priceIds as any)?.[planKey];
-
-      if (!priceId) {
-        try {
-          const r = await fetch("/api/setup-stripe", { method: "GET" });
-          if (r.ok) {
-            const d = await r.json();
-            priceId = d.priceIds?.[priceKey] || d.priceIds?.[planKey];
-            if (priceId) setStripe(prev => ({ ...prev, priceIds: { ...prev.priceIds, ...d.priceIds }, ready: true, keysPresent: true }));
-          }
-        } catch {}
-      }
-      if (!priceId) throw new Error("Price not found. Please contact support.");
-
-      // Save work state before Stripe redirect — restored on return
-      try {
-        const ws: any = { productName };
-        if (strategy)         ws.strategy         = JSON.stringify(strategy);
-        if (productAnalysis)  ws.productAnalysis  = JSON.stringify(productAnalysis);
-        if (uploadedImage)    ws.uploadedImage     = uploadedImage;
-        if (generatedImage)   ws.generatedImage    = generatedImage;
-        if (selectedAngleIndex !== null) ws.selectedAngleIndex = selectedAngleIndex;
-        if (selectedEnvId)    ws.selectedEnvId     = selectedEnvId;
-        if (editableHeadline) ws.editableHeadline  = editableHeadline;
-        if (editableSubtext)  ws.editableSubtext   = editableSubtext;
-        if (editableCTA)      ws.editableCTA       = editableCTA;
-        if (editableAltText)  ws.editableAltText   = editableAltText;
-        if (animationPrompt)  ws.animationPrompt   = animationPrompt;
-        localStorage.setItem("pinviral_work_state", JSON.stringify(ws));
-      } catch {}
-
-      const url = await createCheckoutSession({
-        priceId,
-        planKey,
-        billing,
-        topupKey,
-        email: session?.email,
-      });
-
-      window.location.href = url;
-    } catch (err: any) {
-      setError(err.message || "Checkout failed. Please try again.");
-    } finally {
-      setCheckoutLoading(null);
-    }
-  };
-
-  // -- Stripe Customer Portal ------------------------------------------------
-
-  const openBillingPortal = async () => {
-    setPortalLoading(true);
-    try {
-      const customerId = session.stripeCustomerId;
-      if (!customerId) {
-        showToast("error", "No billing account found. Please upgrade via the pricing page first.");
-        setShowAccountModal(false); setShowPricingModal(true); return;
-      }
-      const r = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "portal", customerId, returnUrl: window.location.href }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "Portal failed");
-      window.location.href = d.url;
-    } catch (err: any) {
-      showToast("error", `Portal error: ${err.message}`);
-    } finally {
-      setPortalLoading(false);
-    }
-  };
-
-  // -- Auto-create Stripe prices (uses /api/setup-stripe — admin only) -------
-
-  const autoCreatePrices = async () => {
-    setIsCreatingPrices(true);
-    setCreationLog([]);
-    setCreationError(null);
-    const log = (msg: string) => setCreationLog(p => [...p, msg]);
-    try {
-      // Step 1: try to fetch existing prices first (fast, no creation needed)
-      log("Checking for existing Stripe prices...");
-      const getRes = await fetch("/api/setup-stripe", { method: "GET" });
-      if (getRes.ok) {
-        const getData = await getRes.json();
-        const count = Object.keys(getData.priceIds || {}).length;
-        if (count >= 13) {
-          log(`✅ Found ${count} existing prices — no need to recreate!`);
-          setStripe(prev => ({ ...prev, priceIds: getData.priceIds, ready: true }));
-          try { localStorage.setItem("pinviral_prices", JSON.stringify(getData.priceIds)); } catch {}
-          return;
-        }
-        if (count > 0) {
-          log(`Found ${count}/13 prices — creating the rest...`);
-        } else {
-          log("No existing prices found — creating all 13...");
-        }
-      }
-
-      // Step 2: create missing prices
-      const res = await fetch("/api/setup-stripe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await res.json().catch(() => ({ error: "Server returned empty response — check Vercel function logs" }));
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
-      log("✅ All prices created successfully!");
-      if (data.priceIds) {
-        setStripe(prev => ({ ...prev, priceIds: data.priceIds, ready: true }));
-        try { localStorage.setItem("pinviral_prices", JSON.stringify(data.priceIds)); } catch {}
-      }
-      (data.log || []).forEach((l: string) => log(l));
-    } catch (err: any) {
-      setCreationError(err.message);
-      log("❌ Error: " + err.message);
-    } finally {
-      setIsCreatingPrices(false);
-    }
-  };
-
-
-  const saveManualKeys = () => {
-    if (!manualSk || !manualPk) return;
-    try { localStorage.setItem(STRIPE_SK_KEY, manualSk); localStorage.setItem(STRIPE_PX_KEY, manualPk); } catch {}
-    const savedPrices = JSON.parse(localStorage.getItem("pinviral_prices") || "{}");
-    const updated: StripeRuntime = { secretKey: manualSk, publishableKey: manualPk, priceIds: { ...savedPrices, ...stripe.priceIds }, keysPresent: true, ready: Object.keys({ ...savedPrices, ...stripe.priceIds }).length === 13 };
-    setStripe(updated);
-  };
-
-  // -- AI helpers ------------------------------------------------------------
-
-  // API key resolved dynamically per-call via readEnv() - never cached at module level
-
-const getAI = () => {
-  const apiKey = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || "";
-  if (!apiKey) throw new Error("API_KEY_MISSING");
-  return new GoogleGenAI({ apiKey });
-};
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-const geminiRest = async (prompt: string, config?: any, parts?: any[]): Promise<string> => {
+// ─── Backend API helpers ───────────────────────────────────────────────────────
+
+/** All text/JSON AI calls → /api/generate (Vercel serverless, key lives server-side) */
+async function geminiRest(
+  prompt: string,
+  opts: { jsonMode?: boolean; parts?: any[] } = {}
+): Promise<string> {
   const res = await fetch("/api/generate", {
-    method: "POST",
+    method:  "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt:   prompt || "",
-      parts:    parts  || null,
-      jsonMode: config?.responseMimeType === "application/json",
+      parts:    opts.parts  || null,
+      jsonMode: opts.jsonMode || false,
     }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error || `Server error ${res.status}`);
   return data.text ?? "";
+}
+
+/** Retry once on genuine 503. Never retries 429 (quota). */
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 1, delay = 2000): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try { return await fn(); } catch (err: any) {
+      lastErr = err;
+      const msg = err.message || String(err);
+      if (msg.includes("429") || msg.includes("Too Many") || msg.includes("RESOURCE_EXHAUSTED")) break;
+      if (!(msg.includes("503") || msg.includes("UNAVAILABLE")) || i === maxRetries - 1) break;
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
+/** Convert base64 string → Blob for video playback */
+function b64ToBlob(b64: string, mime: string): Blob {
+  const bytes = atob(b64);
+  const arr   = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface ViralAngle {
+  title: string; seoTitle: string; hook: string; psychology: string;
+  headlines: string[]; subtext: string[]; cta: string; pinDescription: string;
+  hashtags: string[]; altText: string; animationPrompt: string;
+  aiImagePrompt: string; videoPrompts: string[];
+}
+interface PinStrategy { angles: ViralAngle[]; }
+
+const BASE_REALISTIC_MOTION =
+  "Create subtle, realistic animation: slight camera zoom (Ken Burns effect), soft lighting movement, gentle shadow shift, no distortion of the product, keep product shape 100% accurate, simulate real product photography animation.";
+
+// ─── JSON extractor ────────────────────────────────────────────────────────────
+const extractAndParseJSON = (text: string): any => {
+  if (!text) return {};
+  try { return JSON.parse(text); } catch {
+    const block = text.match(/```json\n?([\s\S]*?)\n?```/);
+    if (block) { try { return JSON.parse(block[1].trim()); } catch {} }
+    const braces = text.match(/\{[\s\S]*\}/);
+    if (braces) { try { return JSON.parse(braces[0]); } catch {} }
+    return {};
+  }
 };
 
-  
+// ─── App ───────────────────────────────────────────────────────────────────────
+export default function App() {
+  const [productName, setProductName]               = useState("");
+  const [isLoading, setIsLoading]                   = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage]   = useState(false);
+  const [isMockMode, setIsMockMode]                 = useState(true);
+  const [isEnhancingSEO, setIsEnhancingSEO]         = useState(false);
+  const [isAnimating, setIsAnimating]               = useState(false);
+  const [isExtending, setIsExtending]               = useState(false);
+  const [animatedVideoUrl, setAnimatedVideoUrl]     = useState<string | null>(null);
+  const [extensionPrompt, setExtensionPrompt]       = useState("");
+  const [customVisualPrompt, setCustomVisualPrompt] = useState("");
+  const [videoMimeType, setVideoMimeType]           = useState("video/mp4");
+  const [animationPrompt, setAnimationPrompt]       = useState("");
+  const [strategy, setStrategy]                     = useState<PinStrategy | null>(null);
+  const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
+  const [overlayPosition, setOverlayPosition]       = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging]                 = useState(false);
+  const [editableHeadline, setEditableHeadline]     = useState("");
+  const [editableSubtext, setEditableSubtext]       = useState("");
+  const [editableCTA, setEditableCTA]               = useState("");
+  const [uploadedImage, setUploadedImage]           = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage]         = useState<string | null>(null);
+  const [copiedField, setCopiedField]               = useState<string | null>(null);
+  const [error, setError]                           = useState<string | null>(null);
+  const [creationsLeft, setCreationsLeft]           = useState(23);
+  const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
+  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
+  const [overlayScale, setOverlayScale]             = useState(1);
+  const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
+  const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
+  const [productUrl, setProductUrl]                 = useState("");
 
-// -- Clean URLs · strip tracking params, extract clean product URL ----------
-  const cleanUrl = (raw: string): string => {
-    try {
-      const url = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
-      // Amazon: keep only /dp/ASIN or /gp/product/ASIN
-      if (/amazon\./i.test(url.hostname)) {
-        const asin = url.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-        if (asin) return `https://www.amazon.com/dp/${asin[1]}`;
-      }
-      // All others: strip tracking params (utm_*, ref, linkId, etc.)
-      const trackingParams = ["utm_source","utm_medium","utm_campaign","utm_term","utm_content",
-        "ref","linkId","linkCode","tag","ascsubtag","language","psc","th","smid","sr","sp_csd",
-        "fbclid","gclid","msclkid","dclid","_ga","mc_eid","mc_cid","yclid","ttclid"];
-      trackingParams.forEach(p => url.searchParams.delete(p));
-      // If no meaningful params left, return clean path
-      return url.toString();
-    } catch {
-      return raw;
-    }
-  };
+  const previewRef = useRef<HTMLDivElement>(null);
+  const CREATION_COSTS = { IMAGE: 1, ANIMATION: 5, EXTENSION: 5 };
 
-  const handleApiError = (err: any, fallback: string) => {
-    const msg = err?.message || String(err);
-    if (msg.includes("API_KEY_MISSING") || msg.includes("API key not valid") || msg.includes("INVALID_ARGUMENT")) {
-      setError("Invalid API key. Check VITE_API_KEY in your .env matches your AI Studio key exactly.");
-      openKeyDialog(); return;
-    }
-    if (msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
-      setError("API key permission denied. Make sure Generative Language API is enabled in Google Cloud.");
-      openKeyDialog(); return;
-    }
-    if (msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Too Many")) {
-      setError("API quota reached. Wait a few minutes then try again. Check your Google AI Studio billing.");
-      return;
-    }
-    if (msg.includes("404") || msg.includes("NOT_FOUND")) {
-      setError("AI model not found (404). Your API key is valid — retrying with fallback model.");
-      return;
-    }
-    if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
-      setError("Google AI servers temporarily unavailable. Please try again in 30 seconds.");
-      return;
-    }
-    setError(fallback || msg);
-  };
-
-  const checkApiKey = async () => { if (window.aistudio?.hasSelectedApiKey) setHasApiKey(await window.aistudio.hasSelectedApiKey()); };
-
-  // -- API key gate: open modal immediately if no valid key found --------------
+  // Auto-fetch social proof when URL is entered
   useEffect(() => {
-    const k = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || "";
-    if (!k) {
-      setTimeout(() => setShowApiKeyModal(true), 800);
-    }
-  }, []);
+    const t = setTimeout(() => {
+      if (productUrl.length > 8 && !isAnalyzingImage && !socialProof)
+        analyzeUploadedImage(null, productUrl);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [productUrl]);
 
-
-  const openKeyDialog = async () => { if (window.aistudio?.openSelectKey) { await window.aistudio.openSelectKey(); setHasApiKey(true); } };
-
+  // ── Helpers ──────────────────────────────────────────────────────────────────
   const selectAngle = (i: number, angle: ViralAngle) => {
     setSelectedAngleIndex(i);
     setEditableHeadline(angle.headlines[0]);
     setEditableSubtext(angle.subtext[0]);
     setEditableCTA(angle.cta);
-    // Set immediate fallback altText so field is never blank
-    setEditableAltText(angle.altText || `${productName} - ${angle.title}. ${angle.psychology}`);
     setAnimationPrompt(angle.animationPrompt);
-    // Lazy enrichment: fires once when user picks an angle
-    // Populates altText, pinDescription, hashtags with AI-enriched copy
-    if (strategy && !angle.pinDescription) {
-      const ctx = socialProof ? `Social proof: ${JSON.stringify(socialProof)}.` : "";
-      enrichAngles(
-        strategy.angles,
-        productName,
-        ctx,
-        null
-      );
-    }
   };
 
-  // -- Pinterest API ------------------------------------------------------
-  const PINTEREST_CLIENT_ID = readEnv("PINTEREST_CLIENT_ID") || readEnv("PINTEREST_APP_ID") || "";
-  const connectPinterest = () => {
-    window.open("https://www.pinterest.com", "_blank", "noopener,noreferrer");
-  };
-  const fetchPinterestBoards = async (token: string) => {
-    try {
-      const r = await fetch("https://api.pinterest.com/v5/boards?page_size=25", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) return;
-      const data = await r.json();
-      setPinterestBoards((data.items||[]).map((b:any)=>({id:b.id,name:b.name})));
-    } catch(e) { devlog.warn("[fetchBoards]",e); }
-  };
-  const schedulePin = async () => {
-    if (!pinterestToken || !generatedImage || !scheduleBoard) return;
-    setIsScheduling(true);
-    try {
-      const angle = selectedAngleIndex!==null ? strategy?.angles[selectedAngleIndex] : null;
-      // Convert base64 image to blob and upload to Pinterest media
-      const base64 = generatedImage.split(",")[1];
-      const blob = await (await fetch(generatedImage)).blob();
-      const formData = new FormData();
-      formData.append("media_type","image/jpeg");
-      const mediaRes = await fetch("https://api.pinterest.com/v5/media", {
-        method:"POST", headers:{Authorization:`Bearer ${pinterestToken}`}, body: formData,
-      });
-      const media = await mediaRes.json();
-      // Create the pin
-      const pinBody: any = {
-        link: productUrl||undefined,
-        title: editableHeadline||angle?.title,
-        description: angle?.pinDescription,
-        alt_text: editableAltText,
-        board_id: scheduleBoard,
-        media_source: { source_type:"image_base64", content_type:"image/jpeg", data: base64 },
-      };
-      if (scheduleDate) pinBody.publish_date = new Date(scheduleDate).toISOString();
-      const pinRes = await fetch("https://api.pinterest.com/v5/pins", {
-        method:"POST",
-        headers:{Authorization:`Bearer ${pinterestToken}`, "Content-Type":"application/json"},
-        body: JSON.stringify(pinBody),
-      });
-      if (pinRes.ok) { setScheduledSuccess(true); setTimeout(()=>{ setShowScheduleModal(false); setScheduledSuccess(false); },2500); }
-      else { const err = await pinRes.json(); throw new Error(err.message||"Pin creation failed"); }
-    } catch(e:any) { showToast("error", e.message||"Failed to schedule pin"); }
-    finally { setIsScheduling(false); }
+  const resetApp = () => {
+    setProductName(""); setProductUrl(""); setStrategy(null); setSelectedAngleIndex(null);
+    setUploadedImage(null); setGeneratedImage(null); setAnimatedVideoUrl(null);
+    setSocialProof(null); setEditableHeadline(""); setEditableSubtext("");
+    setEditableCTA(""); setCustomVisualPrompt(""); setAnimationPrompt(""); setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const generateVariantB = async (primaryAngle: any, product: string, _ai: any) => {
-    if (!primaryAngle) return;
-    try {
-      const prompt = `Pinterest viral expert. Product: "${product}". Primary angle: "${primaryAngle.title}" — ${primaryAngle.psychology}.
-Generate a SECOND completely different pin variant for A/B testing. Different hook, different emotional trigger.
-Return JSON: { "title": string, "hook": string, "subtext": string, "cta": string }`;
-      const text = await withRetry(() => geminiRest(prompt, { responseMimeType: "application/json" }));
-      const v = JSON.parse(text || "{}");
-      if (v.hook) setAbVariantB(v);
-    } catch(e) { devlog.warn("[variantB]",e); }
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const generateVoiceover = async () => {
-    if (selectedAngleIndex === null || !strategy) return;
-    setIsGeneratingVoiceover(true);
-    try {
-      const angle = strategy.angles[selectedAngleIndex];
-      const prompt = `You are a viral Pinterest video voiceover writer. Product: "${productName}". Angle: "${angle.title}" - ${angle.psychology}.
-Write a punchy 30-second voiceover script for a Pinterest video pin.
-Return ONLY valid JSON in this exact format:
-{"tone":"energetic","duration":"30 seconds","script":"Full voiceover script here...","hooks":["Alternative hook 1","Alternative hook 2","Alternative hook 3"]}`;
-      const text = await withRetry(() => geminiRest(prompt));
-      const cleaned = (text || "").replace(/```json|```/g, "").trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.script) setVoiceoverScript(parsed);
-      }
-    } catch(e) { devlog.warn("[voiceover]", e); }
-    finally { setIsGeneratingVoiceover(false); }
-  };
-
-  const regenField = async (field: "headline"|"subtext"|"cta"|"description"|"hashtags") => {
-    if (!strategy || selectedAngleIndex === null) return;
-    setIsRegenField(field);
-    try {
-      const angle = strategy.angles[selectedAngleIndex];
-      const currentVal = field==="headline" ? editableHeadline
-        : field==="subtext"  ? editableSubtext
-        : field==="cta"      ? editableCTA
-        : field==="description" ? angle.pinDescription
-        : (angle.hashtags?.join(" ") ?? "");
-      const returnSchema = field === "hashtags"
-        ? '["#tag1","#tag2","#tag3","#tag4","#tag5","#tag6","#tag7","#tag8","#tag9","#tag10"]'
-        : '"string"';
-      const prompt = "Pinterest copy expert. Product: \"" + productName + "\". Angle: \"" + angle.title + "\" · " + angle.psychology + ".\n"
-        + "Regenerate ONLY the " + field + " field. Be creative and different from: \"" + currentVal + "\".\n"
-        + "Return JSON only: { \"value\": " + returnSchema + " }";
-      const regenText = await withRetry(() => geminiRest(prompt, { responseMimeType: "application/json" }));
-      const parsed = JSON.parse(regenText || "{}");
-      if (parsed.value) {
-        if (field==="headline")     setEditableHeadline(parsed.value);
-        if (field==="subtext")      setEditableSubtext(parsed.value);
-        if (field==="cta")          setEditableCTA(parsed.value);
-        if (field==="description" || field==="hashtags") {
-          setStrategy(prev => {
-            if (!prev||selectedAngleIndex===null) return prev;
-            const angles = [...prev.angles];
-            angles[selectedAngleIndex] = {
-              ...angles[selectedAngleIndex],
-              ...(field==="description"?{pinDescription:parsed.value}:{hashtags:parsed.value}),
-            };
-            return {...prev, angles};
-          });
-        }
-      }
-    } catch(e) { devlog.warn("[regenField]",e); }
-    finally { setIsRegenField(null); }
-  };
-
-  const enrichAngles = (leanAngles: any[], productNameStr: string, context: string, _ai: any) => {
-    const step2Prompt = `Pinterest copy expert. Product: "${productNameStr}". ${context} For each of these 3 angles, return enriched copy. IMPORTANT RULES: (1) headlines must be exactly 5 short punchy variants. (2) pinDescription must be a rich SEO paragraph of at least 100 words · describe the product benefits, who it's for, the lifestyle it fits, and why it's worth buying. Do NOT write one sentence. (3) hashtags must be exactly 10 relevant tags including niche-specific ones. (4) altText must be a proper accessibility description of what would appear in the pin image · describe the product, its visual appearance, and the scene. NOT a URL, NOT just the product name. Angles: ${JSON.stringify(leanAngles.map((a: any)=>({title:a.title,psychology:a.psychology})))}`;
-    const step2Schema = {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          angles: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                headlines:       { type: Type.ARRAY, items: { type: Type.STRING } },
-                subtext:         { type: Type.ARRAY, items: { type: Type.STRING } },
-                cta:             { type: Type.STRING },
-                pinDescription:  { type: Type.STRING },
-                hashtags:        { type: Type.ARRAY, items: { type: Type.STRING } },
-                altText:         { type: Type.STRING },
-              },
-              required: ["headlines","subtext","cta","pinDescription","hashtags","altText"]
-            }
-          }
-        },
-        required: ["angles"]
-      }
-    };
-    (async () => {
-      try {
-        const enrichText = await withRetry(() => geminiRest(step2Prompt, { responseMimeType: "application/json" }));
-        const step2 = JSON.parse(enrichText || "{}");
-        const enriched: any[] = step2.angles || [];
-        if (enriched.length) {
-          setStrategy(prev => {
-            if (!prev) return prev;
-            const merged = prev.angles.map((a, i) => enriched[i] ? { ...a, ...enriched[i] } : a);
-            const updated = { ...prev, angles: merged };
-            if (selectedAngleIndex !== null && enriched[selectedAngleIndex]) {
-              const e = enriched[selectedAngleIndex];
-              if (e.headlines?.[0])   setEditableHeadline(e.headlines[0]);
-              if (e.subtext?.[0])     setEditableSubtext(e.subtext[0]);
-              if (e.cta)              setEditableCTA(e.cta);
-              if (e.altText)          setEditableAltText(e.altText);
-              if (e.animationPrompt)  setAnimationPrompt(e.animationPrompt);
-            }
-            return updated;
-          });
-        }
-      } catch { /* enrichment failure is non-fatal */ }
-    })();
-  };
-
+  // ── Generate strategy ────────────────────────────────────────────────────────
   const generateStrategy = async () => {
     if (!productName.trim()) return;
-    setError(null);
-    setIsLoading(true);
-    const prevStrategy = strategy; // keep old strategy during load
-    setStrategy(null);
-    setGeneratedImage(null); setAnimatedVideoUrl(null);
-    setSocialProof(null); setProductAnalysis(null);
-    setSelectedEnvId(null); setVoiceoverScript(null);
+    setIsLoading(true); setError(null);
+    setGeneratedImage(null); setAnimatedVideoUrl(null); setSocialProof(null); setCustomVisualPrompt("");
     try {
-      // -- URL detection & resolution ----------------------------------------
-      const inputText = productName.trim();
-      // Extract URL if present in the textarea (could be just a URL, or URL + extra text)
-      const urlMatch = inputText.match(/(https?:\/\/[^\s]+|www\.[^\s]+)/i);
-      const detectedUrl = urlMatch ? urlMatch[0] : null;
-      const fetchUrl = detectedUrl ? cleanUrl(detectedUrl.startsWith("http") ? detectedUrl : `https://${detectedUrl}`) : null;
+      const prompt = `You are a Pinterest viral growth expert + e-commerce strategist.
+Create 5 high-converting Pinterest pin strategies for: "${productName}".
+Visual vibe: Professional, Aesthetic, Lifestyle-focused.
+Target: impulse buyers, home decor, lifestyle, problem-solving audiences.
 
-      // Non-URL portion of the input (if any text besides the URL)
-      const textBesideUrl = inputText.replace(detectedUrl || "", "").trim();
+For each angle provide:
+1. title (angle name)
+2. seoTitle (High-CTR pin title, e.g. "Why Every Home Needs This")
+3. hook (1-line attention grabber)
+4. psychology (emotional trigger explanation)
+5. aiImagePrompt (50-80 word descriptive scene)
+6. headlines (exactly 5 punchy variants)
+7. subtext (exactly 3 social-proof lines)
+8. cta
+9. pinDescription (100+ word SEO-optimised paragraph with keywords)
+10. hashtags (exactly 10 relevant tags)
+11. altText (accessibility description of the pin image)
+12. animationPrompt (motion style description)
+13. videoPrompts (exactly 5 scene scripts for 15-30s video)
 
-      let resolvedProductName = textBesideUrl || inputText;
-      let scrapedContext = "";
+NEGATIVE CONSTRAINTS: No generic phrases like "Shop for Trend", "Unlock Your Potential", "Elevate Your Style", "Buy Now".
+Return ONLY valid JSON, no markdown fences, no explanation:
+{"angles":[{"title":"","seoTitle":"","hook":"","psychology":"","aiImagePrompt":"","headlines":["","","","",""],"subtext":["","",""],"cta":"","pinDescription":"","hashtags":["","","","","","","","","",""],"altText":"","animationPrompt":"","videoPrompts":["","","","",""]}]}`;
 
-      if (fetchUrl) {
-        setInputWasUrl(true);
-        setProductUrl(fetchUrl);
-        // Delay social proof & image fetch so strategy call gets priority
-        // This prevents parallel API calls competing for quota
-        setTimeout(() => fetchSocialProof(null, fetchUrl), 3000);
-        setTimeout(() => fetchUrlImages(fetchUrl), 1500);
-      } else {
-        setInputWasUrl(false);
-      }
-
-      // -- Step 1: Generate 3 lean angles -----------------------------------
-      // If a URL was provided, use urlContext so Gemini browses the actual page
-      let r1: any;
-      if (fetchUrl) {
-        const urlStep1Prompt = `You are a Pinterest viral marketing expert.
-The user provided this product page URL: "${fetchUrl}"
-Visit the page, read the actual product name, description, and key features.
-Then generate exactly 3 viral Pinterest pin angles for that product.
-Return ONLY a JSON object (no markdown fences):
-{
-  "productName": "<exact product name from the page>",
-  "sellingPoints": "<1-2 sentences of key features>",
-  "angles": [
-    { "title": string, "hook": string, "psychology": string, "aiImagePrompt": string, "animationPrompt": string },
-    { "title": string, "hook": string, "psychology": string, "aiImagePrompt": string, "animationPrompt": string },
-    { "title": string, "hook": string, "psychology": string, "aiImagePrompt": string, "animationPrompt": string }
-  ]
-}`;
-        try {
-          // Primary: direct REST call (SDK URL routing broken in v1.51)
-          const urlR1 = await withRetry(() => geminiRest(urlStep1Prompt));
-          // Parse product info out of the free-text response
-          const rawText = urlR1 || "{}";
-          const cleaned = rawText.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m =>
-            m.replace(/```json|```/g, "").trim()
-          );
-          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.productName && !parsed.productName.match(/^https?:\/\//)) {
-              resolvedProductName = parsed.productName;
-              scrapedContext = parsed.sellingPoints ? `Key selling points: ${parsed.sellingPoints}.` : "";
-              setProductName(parsed.productName);
-            }
-            if (parsed.angles?.length) {
-              const leanAngles = parsed.angles;
-              const enrichedLean = leanAngles.map((a: any) => {
-                // Guard: if aiImagePrompt is missing, empty, or accidentally a URL, replace it
-                const rawPrompt = a.aiImagePrompt || "";
-                const safePrompt = (!rawPrompt || rawPrompt.startsWith("http"))
-                  ? `Professional Pinterest product lifestyle photography of ${resolvedProductName}. ${a.psychology}. Clean aesthetic, soft natural lighting, 2:3 ratio.`
-                  : rawPrompt;
-                return {
-                  ...a,
-                  aiImagePrompt: safePrompt,
-                  headlines: [
-                    a.hook,
-                    `${a.title} · Try it today`,
-                    `Why everyone loves this ${resolvedProductName}`,
-                    `The secret to ${a.title.toLowerCase()}`,
-                    `${resolvedProductName} · See the difference`,
-                  ],
-                  subtext: [a.psychology],
-                  cta: "Shop Now →",
-                  pinDescription: `${a.hook} ${a.psychology} Perfect for anyone looking to elevate their lifestyle. Discover why thousands of people love this product and how it can transform your everyday routine.`,
-                  hashtags: ["#pinterest","#viral","#lifestyle","#trending","#musthave","#aesthetic","#shopnow","#productreview","#fyp","#inspo"],
-                  altText: `${resolvedProductName} · ${a.title}. ${a.psychology}`,
-                };
-              });
-              setStrategy({ angles: enrichedLean });
-              selectAngle(0, enrichedLean[0]);
-              // Kick off enrichment in background then return early
-              // Cost saving: no background enrichment or A/B variant on generate
-              const urlCtx = scrapedContext || "";
-              enrichAngles(enrichedLean, resolvedProductName, urlCtx, null);
-              return;
-            }
-          }
-        } catch (urlErr) {
-          devlog.warn("[URL step1 urlContext failed]", urlErr);
-          // Fall through to standard text-based generation below
-        }
-      }
-
-      // -- Step 1: Generate 3 lean angles (fast, small payload) ------------
-      const step1Prompt = `Pinterest viral marketing expert. Product: "${resolvedProductName}". ${scrapedContext}
-
-Generate exactly 3 viral Pinterest pin angles for this product.
-You MUST return ONLY a valid JSON object in this exact format with no markdown, no explanation, no code fences:
-{"angles":[{"title":"short title","hook":"attention-grabbing first line","psychology":"emotional trigger explanation","aiImagePrompt":"detailed image description","animationPrompt":"animation description"},{"title":"short title","hook":"attention-grabbing first line","psychology":"emotional trigger explanation","aiImagePrompt":"detailed image description","animationPrompt":"animation description"},{"title":"short title","hook":"attention-grabbing first line","psychology":"emotional trigger explanation","aiImagePrompt":"detailed image description","animationPrompt":"animation description"}]}`;
-      const step1Schema = {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            angles: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  title:           { type: Type.STRING },
-                  hook:            { type: Type.STRING },
-                  psychology:      { type: Type.STRING },
-                  aiImagePrompt:   { type: Type.STRING },
-                  animationPrompt: { type: Type.STRING },
-                },
-                required: ["title","hook","psychology","aiImagePrompt","animationPrompt"]
-              }
-            }
-          },
-          required: ["angles"]
-        }
-      };
-
-      const step1Text = await withRetry(() => geminiRest(step1Prompt, { responseMimeType: "application/json" }));
-      let step1: any = {};
-      try {
-        const cleaned = (step1Text || "").replace(/```json|```/g, "").trim();
-        const jsonMatch = cleaned.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          step1 = Array.isArray(parsed) ? { angles: parsed } : parsed;
-        }
-      } catch { step1 = {}; }
-      const leanAngles: any[] = step1.angles || [];
-      if (!leanAngles.length) throw new Error("No angles returned. Please try again.");
-
-      // Show lean strategy immediately
-      setError(null); setStrategy({ angles: leanAngles.map((a: any) => ({
-        ...a,
-        headlines: [
-          a.hook,
-          `${a.title} · Try it today`,
-          `Why everyone loves this ${resolvedProductName}`,
-          `The secret to ${a.title.toLowerCase()}`,
-          `${resolvedProductName} · See the difference`,
-        ],
-        subtext: [a.psychology],
-        cta: "Shop Now →",
-        pinDescription: `${a.hook} ${a.psychology} Perfect for anyone looking to elevate their lifestyle. Discover why thousands of people love this product and how it can transform your everyday routine.`,
-        hashtags: ["#pinterest","#viral","#lifestyle","#trending","#musthave","#aesthetic","#shopnow","#productreview","#fyp","#inspo"],
-        altText: `${resolvedProductName} · ${a.title}. ${a.psychology}`,
-        aiImagePrompt: `Professional lifestyle photo of ${resolvedProductName}. ${a.psychology}. Clean Pinterest aesthetic, 2:3 ratio, soft natural lighting.`,
-      })) });
-      selectAngle(0, leanAngles[0]);
-
-      // Auto-enrich after strategy loads to populate altText + aiImagePrompt properly
-      // This fires ONCE per generate, only 1 API call
-      const ctx = "";
-      enrichAngles(leanAngles, resolvedProductName, ctx, null);
+      const text = await withRetry(() => geminiRest(prompt, { jsonMode: true }));
+      const data = extractAndParseJSON(text) as PinStrategy;
+      if (!data.angles?.length) throw new Error("No angles returned. Please try again.");
+      setStrategy(data);
+      selectAngle(0, data.angles[0]);
     } catch (err: any) {
-      if (prevStrategy) setStrategy(prevStrategy); // restore previous strategy on failure
-      const emsg = err?.message || String(err);
-      if (emsg.includes("429") || emsg.includes("quota") || emsg.includes("RESOURCE_EXHAUSTED") || emsg.includes("Too Many")) {
-        setError("⏳ Rate limit — please wait 15 seconds and try again.");
-      } else {
-        handleApiError(err, "Failed to generate. Try again.");
-      }
-    }
-    finally { setIsLoading(false); }
+      const msg = err.message || "";
+      setError(
+        msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")
+          ? "⏳ Rate limit — please wait 15 seconds and try again."
+          : msg || "Failed to generate strategy. Please try again."
+      );
+    } finally { setIsLoading(false); }
   };
 
-  const analyzeProductImage = async (imageData: string) => {
-    setIsAnalyzingProduct(true); setAnalysisError(null); setProductAnalysis(null); setSelectedEnvId(null); setShowCustomEnv(false);
-    try {
-      const b64 = imageData.split(",")[1]; const mime = imageData.split(";")[0].split(":")[1];
-      if (!b64 || !mime || !mime.startsWith("image/")) throw new Error("Invalid image data");
-      const prompt = `Analyze this product image. Return JSON only: { "productDescription":"one precise sentence", "keyVisualDetails":"comma-separated details that must never change", "environments":[ { "id":"env1","label":"2-3 words","icon":"sun|moon|leaf|home|camera|droplets|mappin|sparkles","mood":"one word","prompt":"Product photography: the exact same [product] \u00b7 unchanged \u00b7 placed in [50-80 word scene]..." } ...5 total ] }`;
-      const rawText = await geminiRest("", { responseMimeType: "application/json" },
-        [{ inlineData: { data: b64, mimeType: mime } }, { text: prompt }]);
-      const res = JSON.parse(rawText.replace(/\`\`\`json|\`\`\`/g,"").trim()) as ProductAnalysis;
-      if (!res.environments?.length) throw new Error("No environments returned");
-      setProductAnalysis(res);
-      setSelectedEnvId(res.environments[0].id);
-    } catch (e: any) {
-      devlog.warn("[analyzeProductImage]", e?.message);
-      setAnalysisError("Could not analyze product. Write a custom scene below.");
-      setShowCustomEnv(true);
+  // ── Generate image → /api/image ──────────────────────────────────────────────
+  const generateImage = async (currentStrategy?: PinStrategy) => {
+    const active = currentStrategy || strategy;
+    if (!active || selectedAngleIndex === null) return;
+
+    // Mock / draft mode — zero cost preview
+    if (isMockMode) {
+      setIsGeneratingImage(true);
+      await new Promise(r => setTimeout(r, 1200));
+      setGeneratedImage(
+        (uploadedImage || "") + (uploadedImage?.includes("?") ? "&" : "?") + "mock=" + Date.now()
+      );
+      setIsGeneratingImage(false);
+      return;
     }
-    finally { setIsAnalyzingProduct(false); }
-  };
 
-  const fetchSocialProof = async (imageData: string | null, url?: string) => {
-    if (!imageData && !url) return;
-    setIsAnalyzingSocialProof(true);
-    try {
-      const fu = url && !url.startsWith("http") ? `https://${url}` : url;
-      const parts: any[] = [];
-      if (imageData?.startsWith("data:")) {
-        parts.push({ inlineData:{ data:imageData.split(",")[1], mimeType:imageData.split(";")[0].split(":")[1] } });
-      }
-      const textPrompt = [
-        fu ? `Product listing URL: ${fu}.` : "",
-        "Based on the URL domain and any visible product details, infer realistic social proof signals",
-        "(star rating out of 5, approximate review count as a string like '2,847 reviews', units sold like '10K+ sold').",
-        "Return ONLY valid JSON with no markdown or extra text:",
-        `{ "hasSocialProof": boolean, "stars": number|null, "reviews": string|null, "sold": string|null, "suggestedHeadline": string, "suggestedSubtext": string }`,
-      ].filter(Boolean).join(" ");
-      parts.push({ text: textPrompt });
-
-      const raw = await geminiRest("", { responseMimeType: "application/json" }, parts).catch(() => "{}");
-      const res = JSON.parse(raw.replace(/```json|```/g, "").trim());
-      if (res.hasSocialProof) {
-        setSocialProof({ stars: res.stars, reviews: res.reviews, sold: res.sold });
-        if (res.suggestedHeadline) setEditableHeadline(res.suggestedHeadline);
-        if (res.suggestedSubtext)  setEditableSubtext(res.suggestedSubtext);
-      }
-    } catch (err: any) {
-      devlog.warn("[fetchSocialProof]", err?.message || err);
-    } finally {
-      setIsAnalyzingSocialProof(false);
-    }
-  };
-
-  const proxyImg = (url: string) =>
-    `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=jpg&q=80`;
-
-  const fetchUrlImages = async (url: string) => {
-    setIsFetchingUrlImages(true);
-    setUrlImages([]);
-    setSelectedUrlImageIndex(null);
-    try {
-      const fullUrl = url.startsWith("http") ? url : `https://${url}`;
-      const isAmazon = /amazon\.(com|co\.uk|ca|com\.au|de|fr|it|es|co\.jp|in)/i.test(fullUrl);
-
-      let imgs: string[] = [];
-
-      if (isAmazon) {
-        // -- Amazon: corsproxy is blocked, use Gemini urlContext instead --
-        imgs = await fetchAmazonImages(fullUrl);
-      } else {
-        // -- Other sites: parse real HTML via CORS proxy ---------------
-        imgs = await fetchHtmlImages(fullUrl);
-        // If CORS proxy failed or returned nothing, fall back to Gemini
-        if (imgs.length === 0) imgs = await fetchGeminiImages(fullUrl);
-      }
-
-      setUrlImages(imgs);
-    } catch (err) {
-      devlog.warn("[fetchUrlImages]", err);
-    } finally {
-      setIsFetchingUrlImages(false);
-    }
-  };
-
-  const fetchAmazonImages = async (fullUrl: string): Promise<string[]> => {
-    try {
-      // Extract ASIN from URL as hint
-      const asinMatch = fullUrl.match(/\/dp\/([A-Z0-9]{10})|\/gp\/product\/([A-Z0-9]{10})/);
-      const asin = asinMatch ? (asinMatch[1] || asinMatch[2]) : null;
-
-      const prompt = `Visit this Amazon product page: "${fullUrl}"
-${asin ? `The product ASIN is ${asin}.` : ""}
-Find ALL product image URLs on this page. Amazon images are on m.media-amazon.com or images-amazon.com CDNs.
-Look for the main product image and gallery thumbnails. Get the high-res versions (look for _SL1500_ or _AC_SL1500_ or remove size suffixes).
-Return ONLY this JSON · no markdown:
-{"images":["https://m.media-amazon.com/images/I/XXXXX.jpg","..."]}`; 
-
-      const amazonText = await withRetry(() => geminiRest(prompt));
-      const text = amazonText.trim();
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) return [];
-      const parsed = JSON.parse(match[0]);
-      return (parsed.images || [])
-        .filter((u: string) => typeof u === "string" && u.startsWith("http"))
-        .slice(0, 6);
-    } catch (e) {
-      devlog.warn("[fetchAmazonImages]", e);
-      return [];
-    }
-  };
-
-  const fetchGeminiImages = async (fullUrl: string): Promise<string[]> => {
-    try {
-      const prompt = `Visit this product page: "${fullUrl}"
-Extract the absolute URLs of the main product photos (not logos, icons, or UI graphics).
-Return ONLY this JSON — no markdown:
-{"images":["https://...","https://..."]}
-Rules: URLs must start with https://, max 6 images, prefer highest resolution.`;
-      const gemImgText = await withRetry(() => geminiRest(prompt));
-      const text = gemImgText.trim();
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) return [];
-      const parsed = JSON.parse(match[0]);
-      return (parsed.images || [])
-        .filter((u: string) => typeof u === "string" && u.startsWith("http"))
-        .slice(0, 6);
-    } catch (e) {
-      devlog.warn("[fetchGeminiImages]", e);
-      return [];
-    }
-  };
-
-  const fetchHtmlImages = async (fullUrl: string): Promise<string[]> => {
-    try {
-      const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(fullUrl)}`;
-      const res = await fetch(proxyUrl, { headers: { "x-requested-with": "XMLHttpRequest" } });
-      if (!res.ok) return [];
-      const html = await res.text();
-      // If proxy returned a bot-check / login page, bail out
-      if (/robot|captcha|access denied|sign in to continue/i.test(html.slice(0, 2000))) return [];
-
-      const doc = new DOMParser().parseFromString(html, "text/html");
-      const baseOrigin = new URL(fullUrl).origin;
-
-      const toAbsolute = (src: string): string | null => {
-        if (!src) return null;
-        if (src.startsWith("http")) return src;
-        if (src.startsWith("//")) return "https:" + src;
-        if (src.startsWith("/")) return baseOrigin + src;
-        return null;
-      };
-
-      const candidates: { url: string; score: number }[] = [];
-
-      doc.querySelectorAll('meta[property="og:image"], meta[name="twitter:image"], meta[property="product:image"]').forEach(el => {
-        const u = toAbsolute(el.getAttribute("content") || "");
-        if (u) candidates.push({ url: u, score: 100 });
-      });
-
-      doc.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
-        try {
-          const json = JSON.parse(el.textContent || "{}");
-          const imgs = json.image || json.images || [];
-          (Array.isArray(imgs) ? imgs : [imgs]).forEach((i: any) => {
-            const u = toAbsolute(typeof i === "string" ? i : i?.url || "");
-            if (u) candidates.push({ url: u, score: 90 });
-          });
-        } catch { /* ignore */ }
-      });
-
-      doc.querySelectorAll("img").forEach(img => {
-        const src = toAbsolute(
-          img.getAttribute("src") || img.getAttribute("data-src") ||
-          img.getAttribute("data-lazy-src") || img.getAttribute("data-original") || ""
-        );
-        if (!src) return;
-        if (/logo|icon|sprite|banner|badge|avatar|pixel|placeholder|blank|spacer|svg/i.test(src)) return;
-        const w = parseInt(img.getAttribute("width") || "0");
-        const h = parseInt(img.getAttribute("height") || "0");
-        if ((w > 0 && w < 80) || (h > 0 && h < 80)) return;
-        let score = 10;
-        if (/product|item|main|hero|featured|gallery|photo/i.test(src)) score += 30;
-        if (w >= 400 || h >= 400) score += 20;
-        if (/cdn|static|media|images|assets/i.test(src)) score += 10;
-        candidates.push({ url: src, score });
-      });
-
-      const seen = new Set<string>();
-      return candidates
-        .sort((a, b) => b.score - a.score)
-        .filter(c => { if (seen.has(c.url)) return false; seen.add(c.url); return true; })
-        .slice(0, 6)
-        .map(c => c.url);
-    } catch (e) {
-      devlog.warn("[fetchHtmlImages]", e);
-      return [];
-    }
-  };
-
-  const buildPrompt = () => {
-    if (showCustomEnv && customEnvPrompt.trim()) return customEnvPrompt.trim();
-    if (productAnalysis && selectedEnvId) { const e = productAnalysis.environments.find(e=>e.id===selectedEnvId); if (e) return e.prompt; }
-    if (strategy && selectedAngleIndex !== null) {
-      const raw = strategy.angles[selectedAngleIndex].aiImagePrompt;
-      if (raw && !raw.startsWith("http")) return raw;
-    }
-    return `High-quality Pinterest product photography for ${productName||"the product"}.`;
-  };
-
-  const generateImage = async () => {
-    if (!strategy && !uploadedImage) return;
-    if (session.imagesLeft <= 0) { setShowUpgradeModal(true); return; }
+    if (creationsLeft < CREATION_COSTS.IMAGE) { setError(`Only ${creationsLeft} credits left. Upgrade for more.`); return; }
     setIsGeneratingImage(true); setError(null);
     try {
-      const apiKey = readEnv("GEMINI_API_KEY") || readEnv("API_KEY") || "";
-      if (!apiKey) throw new Error("API_KEY_MISSING");
+      const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
+      const CLONING = {
+        direct:    "[IDENTICAL CLONE] Product shape, logo, color, branding 100% identical. Premium setting.",
+        stylized:  "[STYLIZED] Core product identity maintained, artistic/editorial environment.",
+        reimagine: "[REIMAGINE] Product as central element in a completely new conceptual context.",
+        variation: "[VARIATION] Subtle changes: new colorway or material finish.",
+      };
+      const finalPrompt =
+        `${CLONING[cloningMode]} Environment: ${customVisualPrompt || base}. ` +
+        `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
 
-      const pd = productAnalysis?.productDescription || productName || "the product";
-      const kd = productAnalysis?.keyVisualDetails || "";
-      const prompt = buildPrompt();
-      const fullPrompt = uploadedImage
-        ? `Professional Pinterest product photo. Product: ${pd}. ${kd ? "Preserve: " + kd + "." : ""} Scene: ${prompt}. Style: clean lifestyle photography, 2:3 ratio.`
-        : `2:3 Pinterest pin. Product: ${pd}. Scene: ${prompt}. Style: ${strategy && selectedAngleIndex !== null ? strategy.angles[selectedAngleIndex].psychology : "professional lifestyle photography"}.`;
-
-      // -- Image generation via /api/image (server-side) --
-      const imgPayload: any = { prompt: fullPrompt, userId: session?.id };
+      const payload: any = { prompt: finalPrompt };
       if (uploadedImage?.startsWith("data:")) {
-        imgPayload.imageB64  = uploadedImage.split(",")[1];
-        imgPayload.imageMime = uploadedImage.split(";")[0].split(":")[1];
+        payload.imageB64  = uploadedImage.split(",")[1];
+        payload.imageMime = uploadedImage.split(";")[0].split(":")[1];
       }
-      const imgApiRes = await fetch("/api/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(imgPayload),
-      });
-      const imgApiData = await imgApiRes.json();
-      if (!imgApiRes.ok) throw new Error(imgApiData?.error || "Image generation failed");
-      const resultB64 = imgApiData.imageB64 || null;
-      if (!resultB64) throw new Error("No image returned. Please try again.");
-      setGeneratedImage(`data:image/png;base64,${resultB64}`);
-      consumeImage();
-    } catch (err: any) { handleApiError(err, "Failed to generate image."); }
+      const res  = await fetch("/api/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Image generation failed");
+      if (!data.imageB64) throw new Error("No image returned. Please try again.");
+
+      setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
+      setCreationsLeft(p => p - CREATION_COSTS.IMAGE);
+    } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
   };
-  const animateImage = async () => {
-    const sourceImage = generatedImage || uploadedImage;
-    if (!sourceImage) return;
-    if ((session?.videosLeft ?? 0) <= 0) { setShowUpgradeModal(true); return; }
 
+  // ── Analyze image / URL for social proof ────────────────────────────────────
+  const analyzeUploadedImage = async (imageData: string | null, url?: string) => {
+    if (!imageData && !url) return;
+    setIsAnalyzingImage(true);
+    try {
+      const parts: any[] = [];
+      if (imageData?.startsWith("data:"))
+        parts.push({ inlineData: { data: imageData.split(",")[1], mimeType: imageData.split(";")[0].split(":")[1] } });
+      const fu = url && !url.startsWith("http") ? `https://${url}` : url;
+      parts.push({ text:
+        `Analyze this product.${fu ? ` URL: ${fu}.` : ""}
+Detect star ratings, review counts, sold counts.
+Return ONLY valid JSON, no markdown:
+{"hasSocialProof":boolean,"stars":number|null,"reviews":string|null,"sold":string|null,"suggestedHeadline":string,"suggestedSubtext":string}
+No generic CTAs. Focus on social proof and value proposition.` });
+
+      const raw    = await geminiRest("", { jsonMode: true, parts }).catch(() => "{}");
+      const result = extractAndParseJSON(raw);
+      if (result.hasSocialProof) {
+        setSocialProof({ stars: result.stars, reviews: result.reviews, sold: result.sold });
+        if (result.suggestedHeadline) setEditableHeadline(result.suggestedHeadline);
+        if (result.suggestedSubtext)  setEditableSubtext(result.suggestedSubtext);
+      }
+    } catch { /* non-fatal */ }
+    finally { setIsAnalyzingImage(false); }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const d = reader.result as string;
+      setUploadedImage(d);
+      analyzeUploadedImage(d, productUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ── Animate → /api/video ─────────────────────────────────────────────────────
+  const animateImage = async () => {
+    const src = generatedImage || uploadedImage;
+    if (!src) return;
+    if (creationsLeft < CREATION_COSTS.ANIMATION) { setError(`Only ${creationsLeft} credits left. Upgrade for more.`); return; }
     setIsAnimating(true); setError(null); setAnimatedVideoUrl(null);
     try {
-      const b64  = sourceImage.split(",")[1];
-      const mime = sourceImage.split(";")[0].split(":")[1];
+      const b64  = src.split(",")[1];
+      const mime = src.split(";")[0].split(":")[1];
+      const prompt = `${BASE_REALISTIC_MOTION} ` +
+        (animationPrompt || `Animate this Pinterest pin: ${strategy?.angles[selectedAngleIndex ?? 0]?.psychology || productName}. Smooth aesthetic motion, lifestyle feel.`);
 
-      const res = await fetch("/api/video", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageB64:  b64,
-          imageMime: mime,
-          prompt:    animationPrompt || undefined,
-          userId:    session?.id,
-        }),
-      });
+      const res  = await fetch("/api/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageB64: b64, imageMime: mime, prompt }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Video generation failed");
+      if (!data.videoB64) throw new Error("No video returned. Please try again.");
 
-      const videoB64  = data.videoB64;
-      const mimeType  = data.mimeType || "video/mp4";
-      setVideoMimeType(mimeType);
-
-      // Convert base64 → blob URL for playback
-      const bytes    = Uint8Array.from(atob(videoB64), c => c.charCodeAt(0));
-      const blob     = new Blob([bytes], { type: mimeType });
-      const videoUrl = URL.createObjectURL(blob);
-      setAnimatedVideoUrl(videoUrl);
-      setLastVideoB64({ data: videoB64, mime: mimeType });
-
-      // Refresh session credits from server
-      if (session?.email) await loadSession(session.email);
-    } catch (err: any) { handleApiError(err, "Failed to animate image."); }
+      const blob = b64ToBlob(data.videoB64, data.mimeType || "video/mp4");
+      setVideoMimeType(data.mimeType || "video/mp4");
+      setAnimatedVideoUrl(URL.createObjectURL(blob));
+      setCreationsLeft(p => p - CREATION_COSTS.ANIMATION);
+    } catch (err: any) { setError(err.message || "Failed to animate image. This can take a few minutes."); }
     finally { setIsAnimating(false); }
   };
 
-  const extendVideo = async () => {
-    if (!lastVideoB64?.data) return;
-    if ((session?.videosLeft ?? 0) <= 0) { setShowUpgradeModal(true); return; }
+  // ── Extend animation (re-animate with new prompt) ────────────────────────────
+  const extendAnimation = async () => {
+    const src = generatedImage || uploadedImage;
+    if (!src) return;
+    if (creationsLeft < CREATION_COSTS.EXTENSION) { setError(`Only ${creationsLeft} credits left.`); return; }
     setIsExtending(true); setError(null);
     try {
-      const res = await fetch("/api/video-extend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          videoB64:  lastVideoB64.data,
-          videoMime: lastVideoB64.mime,
-          prompt:    extensionPrompt || undefined,
-          userId:    session?.id,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Video extension failed");
+      const b64  = src.split(",")[1];
+      const mime = src.split(";")[0].split(":")[1];
+      const prompt = `${BASE_REALISTIC_MOTION} Continue the cinematic motion smoothly. ` +
+        (extensionPrompt || "Keep the product in focus and maintain realistic lighting.");
 
-      const mimeType = data.mimeType || "video/mp4";
-      setVideoMimeType(mimeType);
-      const bytes = Uint8Array.from(atob(data.videoB64), c => c.charCodeAt(0));
-      const blob  = new Blob([bytes], { type: mimeType });
+      const res  = await fetch("/api/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageB64: b64, imageMime: mime, prompt }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Extension failed");
+      if (!data.videoB64) throw new Error("No video returned.");
+
+      const blob = b64ToBlob(data.videoB64, data.mimeType || "video/mp4");
+      setVideoMimeType(data.mimeType || "video/mp4");
       setAnimatedVideoUrl(URL.createObjectURL(blob));
-      setLastVideoB64({ data: data.videoB64, mime: mimeType });
-      if (session?.email) await loadSession(session.email);
-    } catch (err: any) { handleApiError(err, "Failed to extend video."); }
+      setCreationsLeft(p => p - CREATION_COSTS.EXTENSION);
+    } catch (err: any) { setError(err.message || "Failed to extend animation."); }
     finally { setIsExtending(false); }
   };
 
-  const mimeToExt: Record<string, string> = { "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm" };
-  const downloadVideo = () => {
+  // ── Enhance SEO description ──────────────────────────────────────────────────
+  const enhanceSEO = async () => {
+    if (!strategy || selectedAngleIndex === null) return;
+    setIsEnhancingSEO(true);
+    try {
+      const angle  = strategy.angles[selectedAngleIndex];
+      const text   = await withRetry(() => geminiRest(
+        `Pinterest SEO expert. Enhance this pin description for "${productName}" with more high-performing keywords and long-tail search terms.\nCurrent: "${angle.pinDescription}"\nReturn ONLY the new description text.`
+      ));
+      if (text) {
+        const angles = [...strategy.angles];
+        angles[selectedAngleIndex] = { ...angle, pinDescription: text.trim() };
+        setStrategy({ ...strategy, angles });
+      }
+    } catch { /* non-fatal */ }
+    finally { setIsEnhancingSEO(false); }
+  };
+
+  // ── Download helpers ─────────────────────────────────────────────────────────
+  const downloadImage = async () => {
+    if (!previewRef.current) return;
+    try {
+      const url  = await toPng(previewRef.current, { cacheBust: true, pixelRatio: 3, style: { borderRadius: "0", boxShadow: "none", margin: "0" } });
+      const link = Object.assign(document.createElement("a"), { href: url, download: `pinterest-pin-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png` });
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    } catch { setError("Download failed. Right-click the image and select 'Save Image As'."); }
+  };
+
+  const downloadAnimation = () => {
     if (!animatedVideoUrl) return;
-    const ext = mimeToExt[videoMimeType] || "mp4";
-    const a = document.createElement("a");
-    a.href = animatedVideoUrl;
-    a.download = `pinviral-video-${productName.replace(/\s+/g, "-").toLowerCase()}.${ext}`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const ext  = videoMimeType === "video/quicktime" ? "mov" : videoMimeType === "video/webm" ? "webm" : "mp4";
+    const link = Object.assign(document.createElement("a"), { href: animatedVideoUrl, download: `pinterest-pin-video-${productName.replace(/\s+/g,"-").toLowerCase()}.${ext}` });
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
-  const downloadImage = async () => { if (!previewRef.current) return; try { const url=await toPng(previewRef.current,{cacheBust:true,pixelRatio:2}); const a=document.createElement("a"); a.href=url; a.setAttribute("download",`pinviral-pin-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`); document.body.appendChild(a); a.click(); document.body.removeChild(a); } catch { setError("Download failed."); } };
-  const copyToClipboard = (text: string, field: string) => { navigator.clipboard.writeText(text); setCopiedField(field); setTimeout(()=>setCopiedField(null),2000); };
 
+  // ── Drag handlers for text overlay ──────────────────────────────────────────
   const handleDragStart = () => setIsDragging(true);
-  const handleDrag = (e: React.MouseEvent|React.TouchEvent) => {
-    if (!isDragging||!previewRef.current) return;
-    const rect=previewRef.current.getBoundingClientRect();
-    const cx="touches"in e?e.touches[0].clientX:e.clientX; const cy="touches"in e?e.touches[0].clientY:e.clientY;
-    setOverlayPosition({ x:Math.max(-40,Math.min(40,((cx-rect.left)/rect.width)*100-50)), y:Math.max(-40,Math.min(40,((cy-rect.top)/rect.height)*100-50)) });
-  };
-  const handleDragEnd = () => setIsDragging(false);
-
-  const QuotaBar = ({ used, total, color }: { used:number; total:number; color:string }) => (
-    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-      <div className={`h-full ${color} transition-all duration-700`} style={{width:`${total>0?Math.min(100,(used/total)*100):0}%`}}/>
-    </div>
-  );
-
-  const sceneInfo = (() => {
-    if (!uploadedImage) return null;
-    if (showCustomEnv&&customEnvPrompt) return { label:"Custom", color:"rose" };
-    if (productAnalysis&&selectedEnvId) { const e=productAnalysis.environments.find(e=>e.id===selectedEnvId); if (e) return { label:e.label, color:"violet" }; }
-    return null;
-  })();
-
-  const planDef = PLAN_DEFS[session.plan] || PLAN_DEFS.free;
-  const stripeStatus = stripe.ready ? "live" : stripe.keysPresent ? "partial" : "none";
-
-  // -- Account Modal ---------------------------------------------------------
-
-  const AccountModal = () => {
-    const imageUsedPct = session.imagesTotal > 0 ? Math.min(100, ((session.imagesTotal - session.imagesLeft) / session.imagesTotal) * 100) : 0;
-    const videoUsedPct = session.videosTotal > 0 ? Math.min(100, ((session.videosTotal - session.videosLeft) / session.videosTotal) * 100) : 0;
-    const renewDate = session.expiresAt ? new Date(session.expiresAt).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }) : null;
-
-    return (
-      <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-        <motion.div initial={{opacity:0,y:40}} animate={{opacity:1,y:0}} exit={{opacity:0,y:40}}
-          className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] overflow-y-auto">
-
-          {/* Header */}
-          <div className={cn("p-6 text-white", session.plan==="free"?"bg-slate-800":"bg-gradient-to-br from-slate-900 to-slate-700")}>
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-white/15 flex items-center justify-center text-2xl">{planDef.emoji}</div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Current Plan</p>
-                  <p className="text-xl font-black">{session.plan.charAt(0).toUpperCase()+session.plan.slice(1)}</p>
-                  {session.email && <p className="text-[10px] text-white/60 truncate max-w-[160px]">{session.email}</p>}
-                  {renewDate && <p className="text-[10px] text-white/50">Renews {renewDate}</p>}
-                </div>
-              </div>
-              <button onClick={()=>setShowAccountModal(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={18}/></button>
-            </div>
-
-            {/* Quota bars */}
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><ImageIcon size={11}/>Images</span><span className="font-black">{session.imagesLeft} / {session.imagesTotal || "G·P"} left</span></div>
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-white/80 rounded-full transition-all duration-700" style={{width:`${100-imageUsedPct}%`}}/></div>
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1.5"><span className="text-white/70 font-medium flex items-center gap-1"><Video size={11}/>Videos</span><span className="font-black">{session.videosLeft} / {session.videosTotal || "·"} left</span></div>
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-rose-400 rounded-full transition-all duration-700" style={{width:`${100-videoUsedPct}%`}}/></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-6 space-y-5">
-            {/* Billing actions */}
-            {session.plan !== "free" && (
-              <div className="grid grid-cols-2 gap-3">
-                <button onClick={openBillingPortal} disabled={portalLoading}
-                  className="flex items-center justify-center gap-2 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl text-xs transition-all disabled:opacity-50">
-                  {portalLoading?<Loader2 size={14} className="animate-spin"/>:<Portal size={14}/>} Manage Billing
-                </button>
-                <button onClick={()=>{setShowAccountModal(false);setShowPricingModal(true);}}
-                  className="flex items-center justify-center gap-2 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-2xl text-xs transition-all border border-rose-200">
-                  <Crown size={14}/> Upgrade Plan
-                </button>
-              </div>
-            )}
-
-            {session.plan === "free" && (
-              <button onClick={()=>{setShowAccountModal(false);setShowPricingModal(true);}}
-                className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-sm shadow-lg shadow-rose-200 transition-all">
-                <Crown size={16}/> Upgrade to Paid Plan
-              </button>
-            )}
-
-            {/* Top-up packs */}
-            <div className="space-y-2">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quick Top-ups</p>
-              <div className="grid grid-cols-2 gap-2">
-                {TOPUP_PACKS.slice(0,4).map(p => {
-                  const lk = checkoutLoading===p.key;
-                  return (
-                    <button key={p.key} onClick={()=>startCheckout("topup","monthly",p.key)} disabled={!!checkoutLoading}
-                      className={cn("flex items-center justify-between px-3 py-2.5 rounded-2xl border text-left transition-all hover:scale-[1.02] disabled:opacity-60",
-                        p.highlight?"border-rose-200 bg-rose-50":"border-slate-100 hover:border-rose-200 bg-white")}>
-                      <div><p className="text-[10px] font-black text-slate-700">{p.label}</p></div>
-                      <div className="flex items-center gap-1">{lk&&<Loader2 size={11} className="animate-spin text-rose-500"/>}<span className="text-xs font-black text-rose-600">${p.price}</span></div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Usage history */}
-            {session.topupHistory.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Top-ups</p>
-                <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                  {session.topupHistory.map((h,i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <p className="text-xs text-slate-600 font-medium">{h.label}</p>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[10px] text-slate-400">{new Date(h.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
-                        <span className="text-xs font-black text-emerald-600">${h.amount}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Stripe info */}
-            <div className={cn("flex items-center gap-3 p-3 rounded-2xl border text-xs font-medium",
-              stripeStatus==="live"?"bg-emerald-50 border-emerald-200 text-emerald-700":
-              stripeStatus==="partial"?"bg-amber-50 border-amber-200 text-amber-700":
-              "bg-slate-50 border-slate-200 text-slate-500")}>
-              <CreditCard size={15}/>
-              {stripeStatus==="live" ? `Stripe connected · ${"Connected"} · All prices ready` :
-               stripeStatus==="partial" ? "Stripe keys found · prices needed" :
-               <button onClick={()=>{setShowAccountModal(false);setShowStripeSetup(true);}} className="underline">Setup Stripe payments</button>}
-            </div>
-
-            {/* Cancel subscription */}
-            {session.plan !== "free" && session.stripeSubscriptionId && (
-              <div className="border-t border-slate-100 pt-4 space-y-2">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subscription</p>
-                {!showCancelConfirm ? (
-                  <button onClick={()=>setShowCancelConfirm(true)}
-                    className="w-full py-2.5 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-2xl transition-all border border-rose-100">
-                    Cancel Subscription
-                  </button>
-                ) : (
-                  <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 space-y-3">
-                    <p className="text-xs font-bold text-rose-800">Cancel your {session.plan} plan?</p>
-                    <p className="text-[11px] text-rose-600 leading-relaxed">You'll keep access until end of billing period. No further charges.</p>
-                    <div className="flex gap-2">
-                      <button onClick={()=>setShowCancelConfirm(false)} className="flex-1 py-2 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl text-xs">Keep Plan</button>
-                      <button onClick={async()=>{
-                        setIsCancelling(true);
-                        try {
-                          const r = await fetch("/api/checkout", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ action: "cancel", subscriptionId: session.stripeSubscriptionId }),
-              });
-                          if(r.ok){showToast("success","Cancelled. Access continues until period end.");setShowCancelConfirm(false);}
-                          else showToast("error","Failed. Email support@pinviral.ai");
-                        } catch{showToast("error","Failed. Email support@pinviral.ai");}
-                        finally{setIsCancelling(false);}
-                      }} disabled={isCancelling}
-                        className="flex-1 py-2 bg-rose-600 text-white font-black rounded-xl text-xs flex items-center justify-center gap-1 disabled:opacity-50">
-                        {isCancelling&&<Loader2 size={11} className="animate-spin"/>}{isCancelling?"...":"Yes, Cancel"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Export + Delete */}
-            <div className="border-t border-slate-100 pt-4 space-y-2">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data & Privacy</p>
-              <button onClick={()=>{
-                const data={session:JSON.parse(localStorage.getItem("pinviral_session_v2")||"{}"),consent:localStorage.getItem("_pv_consent_v2"),exportedAt:new Date().toISOString()};
-                const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
-                const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="pinviral-data-export.json";a.click();URL.revokeObjectURL(url);
-              }} className="w-full py-2.5 text-xs font-bold text-slate-500 hover:bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center gap-2">
-                <Download size={12}/>Export My Data
-              </button>
-              <button onClick={()=>{if(confirm("Delete your account? This clears all local data. Subscription refunds need to be requested via email.")){localStorage.clear();indexedDB.deleteDatabase("_pvs");window.location.reload();}}}
-                className="w-full py-2.5 text-xs font-bold text-red-400 hover:bg-red-50 rounded-2xl border border-red-100 flex items-center justify-center gap-2">
-                <Trash2 size={12}/>Delete Account & Data
-              </button>
-            </div>
-
-          </div>
-        </motion.div>
-      </div>
-    );
+  const handleDragEnd   = () => setIsDragging(false);
+  const handleDrag = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!isDragging || !previewRef.current) return;
+    const rect = previewRef.current.getBoundingClientRect();
+    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    setOverlayPosition({
+      x: Math.max(-40, Math.min(40, ((cx - rect.left) / rect.width)  * 100 - 50)),
+      y: Math.max(-40, Math.min(40, ((cy - rect.top)  / rect.height) * 100 - 50)),
+    });
   };
 
-  // -- Upgrade Modal ? opens Pricing Modal ----------------------------------
-  const UpgradeModal = () => {
-    useEffect(() => {
-      setShowUpgradeModal(false);
-      setShowPricingModal(true);
-    }, []);
-    return null;
-  };
-
-  // -- Pricing Modal ---------------------------------------------------------
-  const PricingModal = () => {
-    const [billingCycle, setBillingCycle] = useState<"monthly"|"annual">("monthly");
-    return (
-      <div className="fixed inset-0 z-[135] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4">
-        <motion.div initial={{opacity:0,y:40}} animate={{opacity:1,y:0}} exit={{opacity:0,y:40}}
-          className="bg-white w-full sm:max-w-lg rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
-          {/* Header */}
-          <div className="bg-gradient-to-br from-rose-600 to-rose-700 p-6 text-white shrink-0">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center"><Crown size={16}/></div>
-                <h3 className="font-black text-xl">Upgrade PinViral</h3>
-              </div>
-              <button onClick={()=>setShowPricingModal(false)} className="w-7 h-7 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all"><X size={14}/></button>
-            </div>
-            {/* Billing toggle */}
-            <div className="flex gap-1 bg-white/10 rounded-2xl p-1 w-fit">
-              {(["monthly","annual"] as const).map(b=>(
-                <button key={b} onClick={()=>setBillingCycle(b)}
-                  className={cn("px-4 py-1.5 rounded-xl text-xs font-black transition-all",billingCycle===b?"bg-white text-rose-600":"text-white/70 hover:text-white")}>
-                  {b==="monthly"?"Monthly":"Annual · Save 30%"}
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Plans */}
-          <div className="overflow-y-auto p-4 space-y-3">
-            {(["starter","pro","scale"] as const).map(key=>{
-              const p=PLAN_DEFS[key]; const isPopular=p.popular; const price=billingCycle==="annual"?p.annual:p.monthly;
-              const lk=checkoutLoading===`${key}_${billingCycle}`;
-              return (
-                <button key={key} onClick={()=>startCheckout(key,billingCycle)} disabled={!!checkoutLoading||session.plan===key}
-                  className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all hover:scale-[1.01] disabled:opacity-60 relative",
-                    isPopular?"border-rose-400 bg-rose-50":"border-slate-100 hover:border-rose-200 bg-white")}>
-                  {isPopular&&<span className="absolute top-3 right-3 text-[9px] font-black bg-rose-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Popular</span>}
-                  {session.plan===key&&<span className="absolute top-3 right-3 text-[9px] font-black bg-emerald-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Current</span>}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <p className="font-black text-slate-900">{p.emoji} {key.charAt(0).toUpperCase()+key.slice(1)}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{p.images} images · {p.videos} videos/mo</p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {p.features.slice(0,3).map((f:string)=><span key={f} className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{f}</span>)}
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="font-black text-rose-600 text-xl">${price}</p>
-                      <p className="text-[9px] text-slate-400">/mo</p>
-                      {lk&&<Loader2 size={13} className="animate-spin text-rose-400 mx-auto mt-1"/>}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-            {/* Top-ups */}
-            <div className="pt-2">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">One-Time Top-Ups</p>
-              <div className="grid grid-cols-2 gap-2">
-                {TOPUP_PACKS.map((p:any)=>{
-                  const lk=checkoutLoading===p.key;
-                  return (
-                    <button key={p.key} onClick={()=>startCheckout("topup","monthly",p.key)} disabled={!!checkoutLoading}
-                      className={cn("p-3 rounded-2xl border text-left transition-all hover:scale-[1.02] disabled:opacity-60",p.highlight?"border-rose-200 bg-rose-50":"border-slate-100 hover:border-rose-200 bg-white")}>
-                      <p className="text-xs font-black text-slate-700">{p.label}</p>
-                      <p className="text-sm font-black text-rose-600 mt-0.5">${p.price} {lk&&<Loader2 size={11} className="animate-spin inline ml-1"/>}</p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <p className="text-center text-[10px] text-slate-400 pb-2">Secure payment via Stripe · Cancel anytime</p>
-            <button onClick={()=>{ setShowPricingModal(false); setShowUpgradeModal(false); }}
-              className="w-full py-3 text-slate-400 hover:text-slate-600 text-xs font-bold transition-colors text-center">
-              ✕ Continue without upgrading
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  };
-
-  // -- Stripe Setup Modal ----------------------------------------------------
-
-  const StripeSetupModal = () => {
-    const envHasKeys = !!(readEnv("STRIPE_SECRET_KEY") || readEnv("STRIPE_PUBLISHABLE_KEY"));
-    const priceCount = Object.keys(stripe.priceIds).length;
-    return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-        <motion.div initial={{opacity:0,scale:0.95}} animate={{opacity:1,scale:1}} exit={{opacity:0,scale:0.95}}
-          className="bg-white rounded-[2rem] shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-          <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white sticky top-0 z-10">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3"><div className="w-10 h-10 bg-white/10 rounded-xl flex items-center justify-center"><CreditCard size={20}/></div><div><h3 className="font-black text-lg">Stripe Payments</h3><p className="text-slate-400 text-xs">{"✅ Connected"} · Auto-reads from .env</p></div></div>
-              <button onClick={()=>setShowStripeSetup(false)} className="p-2 hover:bg-white/10 rounded-xl"><X size={17}/></button>
-            </div>
-          </div>
-          <div className="p-6 space-y-5">
-            {/* Status cards */}
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                {label:"Secret Key", ok:!!stripe.secretKey,      hint: stripe.secretKey ? "loaded ✅" : "paste below"},
-                {label:"Pub Key",    ok:!!stripe.publishableKey, hint: stripe.publishableKey ? "loaded ✅" : "paste below"},
-                {label:"Price IDs",  ok:priceCount===13,          hint:`${priceCount}/13`}
-              ].map(s=>(
-                <div key={s.label} className={cn("flex flex-col items-center gap-1 p-3 rounded-2xl border text-center",s.ok?"bg-emerald-50 border-emerald-200":"bg-amber-50 border-amber-200")}>
-                  {s.ok?<CheckCircle2 size={17} className="text-emerald-500"/>:<AlertCircle size={17} className="text-amber-500"/>}
-                  <p className="text-[10px] font-black text-slate-700">{s.label}</p>
-                  <p className="text-[9px] text-slate-400">{s.hint}</p>
-                </div>
-              ))}
-            </div>
-
-            {envHasKeys&&stripe.secretKey&&<div className="flex items-start gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><ShieldCheck size={16} className="text-emerald-600 mt-0.5 shrink-0"/><div><p className="text-sm font-bold text-emerald-800">Stripe keys auto-loaded from .env ✅</p><p className="text-xs text-emerald-700 mt-0.5">Your <code className="bg-emerald-100 px-1 rounded">STRIPE_SECRET_KEY</code> and <code className="bg-emerald-100 px-1 rounded">STRIPE_PUBLISHABLE_KEY</code> were detected automatically.</p></div></div>}
-
-            {/* Always show key inputs · SK can't be read client-side without VITE_ prefix */}
-            {!stripe.secretKey && (
-              <div className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-200">
-                <AlertCircle size={16} className="text-amber-600 mt-0.5 shrink-0"/>
-                <p className="text-sm text-amber-700">Stripe Secret Key not accessible in browser. Paste it below once · it's stored locally and never sent anywhere except Stripe's API directly.</p>
-              </div>
-            )}
-            <div className="space-y-3">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Secret Key <span className="normal-case font-normal text-slate-300">(sk_test_... · stored locally)</span></label>
-                <input type="password" placeholder="sk_test_..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-slate-400 outline-none" value={manualSk} onChange={e=>setManualSk(e.target.value)}/>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publishable Key <span className="normal-case font-normal text-slate-300">(pk_test_...)</span></label>
-                <input type="text" placeholder="pk_test_..." className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono text-slate-700 focus:ring-2 focus:ring-slate-400 outline-none" value={manualPk} onChange={e=>setManualPk(e.target.value)}/>
-              </div>
-              <button onClick={saveManualKeys} disabled={!manualSk||!manualPk} className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"><Check size={14}/>{stripe.keysPresent ? "Update Keys" : "Save Keys"}</button>
-            </div>
-
-            {stripe.keysPresent && priceCount < 13 && (
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-200"><AlertCircle size={15} className="text-rose-600 mt-0.5 shrink-0"/><div><p className="text-sm font-black text-rose-800">? {13-priceCount} Price ID{13-priceCount>1?"s":""} Missing · Checkout Won't Work</p><p className="text-xs text-rose-700 mt-1">Click the button below to auto-create all missing prices in your Stripe account. This only takes a few seconds.</p></div></div>
-                <button onClick={autoCreatePrices} disabled={isCreatingPrices} className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-rose-100 transition-all hover:scale-[1.01]">{isCreatingPrices?<><Loader2 className="animate-spin" size={16}/>Creating prices in Stripe...</>:<><CreditCard size={16}/>Auto-Create All {13-priceCount} Missing Prices</>}</button>
-              </div>
-            )}
-            {stripe.ready && <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-200"><CheckCircle2 size={17} className="text-emerald-500"/><p className="text-sm font-bold text-emerald-800">All 13 price IDs active · checkout is live ✅</p></div>}
-
-            {creationLog.length>0&&<div className="bg-slate-900 rounded-2xl p-4 max-h-52 overflow-y-auto font-mono text-xs space-y-0.5">{creationLog.map((m,i)=><p key={i} className={cn("leading-relaxed",m.startsWith("=···")||m.startsWith("  STRIPE_")?"text-emerald-400 font-bold":m.startsWith("  ✅")?"text-emerald-400":m.startsWith("  ")?"text-slate-400":"text-white")}>{m}</p>)}{isCreatingPrices&&<p className="text-slate-500 animate-pulse">G··</p>}</div>}
-            {creationError&&<div className="flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={13} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{creationError}</p></div>}
-          </div>
-        </motion.div>
-      </div>
-    );
-  };
-
-  // -- Render ----------------------------------------------------------------
-
+  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-rose-100 selection:text-rose-600">
 
-      {/* Toast */}
-      <AnimatePresence>
-        {paymentToast && (
-          <motion.div initial={{opacity:0,y:-60}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-60}}
-            className={cn("fixed top-4 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 text-white max-w-md w-full mx-4",
-              paymentToast.type==="success"?"bg-emerald-600":"bg-rose-600")}>
-            {paymentToast.type==="success"?<CheckCircle2 size={20}/>:<AlertCircle size={20}/>}
-            <p className="font-bold text-sm">{paymentToast.message}</p>
-            <button onClick={()=>setPaymentToast(null)} className="ml-auto opacity-70 hover:opacity-100"><X size={15}/></button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Header */}
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-rose-600 rounded-lg flex items-center justify-center text-white"><Sparkles size={17}/></div>
+        <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-rose-600 rounded-lg flex items-center justify-center text-white"><Sparkles size={18}/></div>
             <h1 className="font-bold text-xl tracking-tight">PinViral</h1>
-            {session.plan!=="free"&&<span className={cn("hidden sm:flex items-center gap-1 px-2.5 py-1 text-[10px] font-black rounded-full uppercase tracking-tight",session.plan==="pro"?"bg-rose-100 text-rose-700":"bg-violet-100 text-violet-700")}><Crown size={9}/>{session.plan}</span>}
           </div>
-
-          <div className="flex items-center gap-3">
-            {/* Quotas */}
-            <div className="hidden sm:flex flex-col gap-1 min-w-[128px]">
-              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider"><span className="flex items-center gap-1"><ImageIcon size={9}/>Images</span><span className={session.imagesLeft<=2?"text-rose-600 animate-pulse":""}>{session.imagesLeft} left</span></div>
-              <QuotaBar used={(session.imagesTotal||3)-session.imagesLeft} total={session.imagesTotal||3} color="bg-rose-500"/>
-              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-0.5"><span className="flex items-center gap-1"><Video size={9}/>Videos</span><span className={session.videosLeft<=0&&session.plan!=="free"?"text-indigo-600 animate-pulse":""}>{session.videosLeft} left</span></div>
-              <QuotaBar used={(session.videosTotal||0)-session.videosLeft} total={Math.max(session.videosTotal||0,1)} color="bg-indigo-500"/>
-            </div>
-
-                        {/* Account button */}
-            <button onClick={()=>setShowAccountModal(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all">
-              <div className="w-6 h-6 bg-slate-800 rounded-full flex items-center justify-center text-white"><User size={12}/></div>
-              <div className="hidden sm:flex flex-col items-start">
-                <span className="text-xs font-bold text-slate-700 capitalize leading-tight">{session.plan}</span>
-                {session.email && <span className="text-[9px] text-slate-400 leading-tight max-w-[120px] truncate">{session.email}</span>}
-              </div>
+          <div className="flex items-center gap-4">
+            {strategy && (
+              <button onClick={resetApp} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-all">
+                <RefreshCw size={14}/> Next Product
+              </button>
+            )}
+            <button onClick={() => document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth" })}
+              className="hidden sm:flex px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-lg shadow-rose-100 uppercase tracking-widest transition-all">
+              Plus Plan
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-12">
+      <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
 
-        {/* Hero */}
-        <section className="text-center mb-12">
-          <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{duration:0.5}}>
-            <h2 className="text-4xl sm:text-6xl font-extrabold text-slate-900 mb-4 tracking-tight">
-              What are you <span className="text-rose-600">selling</span> today?
+        {/* ── Input zone ─────────────────────────────────────────────────────── */}
+        <section className={cn("transition-all duration-700 max-w-4xl mx-auto", strategy ? "mb-8 opacity-40 scale-95 pointer-events-none" : "mb-16")}>
+          <div className="text-center mb-10">
+            <h4 className="text-rose-600 font-black uppercase tracking-[0.3em] text-[10px] mb-2">What Are You Selling Today?</h4>
+            <h2 className="text-4xl sm:text-5xl font-black text-slate-900 mb-4 tracking-tighter">
+              {strategy ? "Strategy Ready" : "Start Your Viral Campaign"}
             </h2>
-            <p className="text-slate-500 text-lg max-w-2xl mx-auto mb-8">Follow the steps below · product to viral pin in minutes.</p>
-              <div className="max-w-2xl mx-auto space-y-3">
-              <div className="bg-white border border-slate-200 rounded-3xl shadow-sm focus-within:ring-2 focus-within:ring-rose-500 transition-all overflow-hidden">
-                  <div className="flex items-center gap-3 px-4 py-4">
-                    <Search size={20} className="text-slate-400 shrink-0"/>
-                    <textarea
-                      placeholder={"e.g. Summer Dresses for Women 2024\ne.g. Wireless Noise Cancelling Headphones"}
-                      className="flex-1 bg-transparent outline-none text-lg text-slate-700 resize-none placeholder-slate-300 leading-relaxed min-h-[52px]"
-                      value={productName} onChange={e=>setProductName(e.target.value)}
-                      onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();generateStrategy();}}}
-                      rows={2}
-                    />
-                    <button onClick={generateStrategy} disabled={isLoading||!productName.trim()}
-                      className="shrink-0 px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white font-bold rounded-2xl shadow-lg shadow-rose-100 transition-all flex items-center gap-2 group text-sm">
-                      {isLoading?<Loader2 className="animate-spin" size={16}/>:<>Generate<ArrowRight size={15} className="group-hover:translate-x-1 transition-transform"/></>}
-                    </button>
+            <p className="text-slate-500 text-lg font-medium">
+              Upload product photo. Generate 5 professional angles. <span className="text-rose-600 italic">Go Viral.</span>
+            </p>
+          </div>
+
+          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">1. Product Name</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400"><Target size={20}/></div>
+                    <input type="text" placeholder="e.g. Minimalist Ceramic Vase"
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-slate-700 font-bold"
+                      value={productName} onChange={e => setProductName(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && generateStrategy()}/>
                   </div>
                 </div>
-              <AnimatePresence>{error&&!strategy&&!isLoading&&<motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}} className="bg-rose-50 border border-rose-100 p-4 rounded-2xl text-rose-700 text-sm font-medium flex items-start gap-3"><AlertCircle size={17} className="shrink-0 mt-0.5"/><p>{error}</p><button onClick={()=>setError(null)} className="ml-auto shrink-0 text-rose-400 hover:text-rose-600 transition-colors"><X size={14}/></button></motion.div>}</AnimatePresence>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">2. Social Proof URL <span className="text-slate-300 normal-case font-medium">(optional)</span></label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400"><ExternalLink size={20}/></div>
+                    <input type="text" placeholder="Paste store URL for reviews"
+                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-slate-700 font-bold"
+                      value={productUrl} onChange={e => setProductUrl(e.target.value)}/>
+                  </div>
+                  {isAnalyzingImage && (
+                    <p className="text-[10px] text-violet-500 font-bold ml-1 flex items-center gap-1 animate-pulse">
+                      <Loader2 size={9} className="animate-spin"/> Fetching social proof…
+                    </p>
+                  )}
+                  {socialProof?.stars && (
+                    <p className="text-[10px] text-emerald-600 font-bold ml-1 flex items-center gap-1">
+                      <Check size={9}/> Found: {socialProof.stars}★ · {socialProof.reviews}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">3. Product Image</label>
+                <ImageUpload onImageUpload={handleImageUpload} imageUrl={uploadedImage}/>
+              </div>
             </div>
-          </motion.div>
+
+            {error && (
+              <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
+                <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
+                <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
+              </div>
+            )}
+
+            {!strategy && (
+              <button onClick={generateStrategy} disabled={isLoading || !productName.trim() || !uploadedImage}
+                className="w-full py-5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black text-xl rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
+                {isLoading ? <Loader2 className="animate-spin" size={24}/> : <><Zap size={24}/> Output 5 Viral Angles &amp; SEO</>}
+              </button>
+            )}
+          </div>
         </section>
 
-        {/* Steps */}
+        {/* ── Strategy workspace ─────────────────────────────────────────────── */}
         {strategy && (
-          <motion.div initial={{opacity:0}} animate={{opacity:1}} className="mb-24">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-              <div className="lg:col-span-7 space-y-10">
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
+            className="grid grid-cols-1 lg:grid-cols-12 gap-8">
 
-                {/* Step 1 · Viral Angle */}
-                <StepCard number={1} title="Choose Viral Angle" subtitle="Pick the psychology behind your pin">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {strategy.angles.map((angle,i)=>(
-                      <button key={i} onClick={()=>selectAngle(i,angle)}
-                        className={cn("p-5 rounded-[1.75rem] border-2 text-left transition-all hover:scale-[1.02] flex flex-col h-full group",selectedAngleIndex===i?"bg-white border-rose-600 shadow-xl shadow-rose-100 ring-4 ring-rose-50":"bg-white border-slate-100 shadow-sm hover:border-rose-200")}>
-                        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center mb-3 transition-colors",selectedAngleIndex===i?"bg-rose-600 text-white":"bg-slate-100 text-slate-400 group-hover:bg-rose-100 group-hover:text-rose-600")}><Zap size={17}/></div>
-                        <h4 className="font-black text-slate-900 mb-1.5 text-sm tracking-tight">{angle.title}</h4>
-                        <p className="text-xs text-slate-500 leading-relaxed font-medium flex-1">{angle.hook}</p>
-                        {selectedAngleIndex===i&&<div className="mt-3 flex items-center gap-1.5 text-rose-600 text-[10px] font-black uppercase tracking-widest"><Check size={10}/>Selected</div>}
-                      </button>
-                    ))}
-                  </div>
-                </StepCard>
+            {/* Left panel */}
+            <div className="lg:col-span-5 space-y-6">
+              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6 sticky top-24">
 
-                {/* Step 2 · Upload */}
-                <StepCard number={2} title="Upload Your Product Photo" subtitle="AI keeps your product identical · only the world around it changes">
-                  <div className="space-y-4">
-                    <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                        {uploadedImage?(
-                          <div className="relative rounded-2xl overflow-hidden border border-slate-100 aspect-square bg-slate-50">
-                            <img src={uploadedImage} alt="Product" className="w-full h-full object-contain"/>
-                            {isAnalyzingProduct&&<div className="absolute inset-0 bg-violet-900/65 backdrop-blur-sm flex flex-col items-center justify-center gap-2"><Loader2 className="animate-spin text-white" size={26}/><p className="text-white text-sm font-bold">Analyzing...</p></div>}
-                            <button onClick={()=>{setUploadedImage(null);setProductAnalysis(null);setSelectedEnvId(null);setGeneratedImage(null);setAnalysisError(null);}} className="absolute top-2 right-2 px-2.5 py-1 bg-white/90 text-rose-600 text-xs font-bold rounded-full shadow hover:bg-white">Remove</button>
-                          </div>
-                        ):(
-                          <label className="flex flex-col items-center justify-center aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:bg-slate-100 transition-all group">
-                            {!rightsAttested && (
-                              <div className="absolute -top-1 left-0 right-0 z-10 mx-1">
-                                <label className="flex items-start gap-2 cursor-pointer p-2.5 bg-amber-50 border border-amber-200 rounded-xl" onClick={e=>e.stopPropagation()}>
-                                  <input type="checkbox" checked={rightsAttested} onChange={e=>setRightsAttested(e.target.checked)} className="mt-0.5 accent-amber-500 shrink-0"/>
-                                  <span className="text-[10px] text-amber-800 leading-relaxed font-medium">I own the rights to this image</span>
-                                </label>
-                              </div>
-                            )}
-                            <input type="file" className="hidden" accept="image/*" onChange={e=>{if(!rightsAttested){showToast("error","Please confirm you own the rights to this image first.");return;}const f=e.target.files?.[0];if(f){const r=new FileReader();r.onloadend=()=>{const d=r.result as string;setUploadedImage(d);setGeneratedImage(null);analyzeProductImage(d);};r.readAsDataURL(f);}}}/>
-                            <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-300 group-hover:text-violet-500 transition-colors shadow-sm mb-3"><Upload size={23}/></div>
-                            <p className="font-black text-slate-700">Upload Photo</p>
-                            <p className="text-xs text-slate-400 mt-1">Auto-generates 5 scenes</p>
-                          </label>
-                        )}
-
+                {/* Angle selector */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Strategy Angle</label>
+                      <p className="text-[9px] text-rose-500 font-bold italic">Swapping angles is free &amp; instant</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {/* Draft mode toggle */}
+                      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg" title="Draft mode: preview without using API credits">
+                        <span className={cn("text-[9px] font-black px-2 uppercase tracking-tight", isMockMode ? "text-emerald-600" : "text-slate-400")}>Draft</span>
+                        <button onClick={() => setIsMockMode(v => !v)}
+                          className={cn("w-8 h-4 rounded-full transition-all relative", isMockMode ? "bg-emerald-500" : "bg-slate-300")}>
+                          <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all", isMockMode ? "right-0.5" : "left-0.5")}/>
+                        </button>
+                      </div>
+                      {/* Angle number pills */}
+                      <div className="flex gap-1.5">
+                        {[0,1,2,3,4].map(i => (
+                          <button key={i} onClick={() => selectAngle(i, strategy.angles[i])}
+                            className={cn("w-8 h-8 rounded-full border-2 font-black text-xs transition-all flex items-center justify-center",
+                              selectedAngleIndex === i ? "bg-rose-600 border-rose-600 text-white scale-110 shadow-lg" : "bg-white border-slate-100 text-slate-300 hover:border-rose-300 hover:text-rose-600")}>
+                            {i + 1}
+                          </button>
+                        ))}
                       </div>
                     </div>
-
-                    {/* Product URL — social proof only (no image import) */}
-                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 space-y-3">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Product URL <span className="text-slate-300 font-medium normal-case">(optional)</span></p>
-                        <p className="text-[11px] text-slate-400 mb-3 leading-relaxed">
-                          Paste your product URL to pull star ratings &amp; review counts onto your pin.
-                        </p>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-300">
-                            <ExternalLink size={13}/>
-                          </div>
-                          <input
-                            type="text"
-                            placeholder="amazon.com/... or shop.com/product/..."
-                            className="w-full pl-8 pr-16 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-rose-400 outline-none transition-all"
-                            value={productUrl}
-                            onChange={e => setProductUrl(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === "Enter" && productUrl.trim()) {
-                                const u = productUrl.startsWith("http") ? productUrl : `https://${productUrl}`;
-                                fetchSocialProof(null, u);
-                                setProductUrl(u);
-                              }
-                            }}
-                          />
-                          {isAnalyzingSocialProof ? (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                              <Loader2 size={13} className="animate-spin text-rose-500"/>
-                            </div>
-                          ) : productUrl.trim() ? (
-                            <button
-                              onClick={() => {
-                                const u = productUrl.startsWith("http") ? productUrl : `https://${productUrl}`;
-                                fetchSocialProof(null, u);
-                                setProductUrl(u);
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 bg-rose-600 text-white text-[10px] font-black rounded-lg hover:bg-rose-700 transition-colors">
-                              Fetch
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                      {socialProof && (
-                        <div className="flex items-center gap-2 text-emerald-600 text-xs font-bold bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-100">
-                          <Check size={12}/>Social proof added to pin
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Environment selector */}
-                    <AnimatePresence>
-                      {uploadedImage&&(
-                        <motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} exit={{opacity:0,y:-8}}
-                          className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                          <div className="px-6 pt-5 pb-4 border-b border-slate-100">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2.5"><div className="w-8 h-8 bg-violet-100 rounded-xl flex items-center justify-center text-violet-600"><Shuffle size={15}/></div><div><p className="font-black text-slate-900 text-sm">Scene Environment</p><p className="text-[10px] text-slate-400">Same product · Different world</p></div></div>
-                              {isAnalyzingProduct&&<div className="flex items-center gap-1.5 text-violet-600 text-[10px] font-bold bg-violet-50 px-2.5 py-1 rounded-full border border-violet-100 animate-pulse"><Loader2 size={9} className="animate-spin"/>Generating...</div>}
-                            </div>
-                            {productAnalysis?.productDescription&&<motion.div initial={{opacity:0}} animate={{opacity:1}} className="mt-3 space-y-2">
-                              <div className="flex items-start gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100"><Eye size={12} className="text-slate-400 mt-0.5 shrink-0"/><div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Detected</p><p className="text-xs text-slate-700 font-medium">{productAnalysis.productDescription}</p></div></div>
-                              {productAnalysis.keyVisualDetails&&<div className="flex items-start gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100"><Sparkles size={12} className="text-amber-500 mt-0.5 shrink-0"/><div><p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Locked</p><p className="text-xs text-amber-700 font-medium">{productAnalysis.keyVisualDetails}</p></div></div>}
-                            </motion.div>}
-                            {analysisError&&<div className="mt-2 flex items-start gap-2 p-3 bg-rose-50 rounded-xl border border-rose-100"><AlertCircle size={12} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs text-rose-600 font-medium">{analysisError}</p></div>}
-                          </div>
-                          {isAnalyzingProduct&&!productAnalysis&&<div className="p-5 space-y-2">{[1,2,3,4,5].map(i=><div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 animate-pulse"><div className="w-8 h-8 bg-slate-200 rounded-xl shrink-0"/><div className="flex-1 space-y-1.5"><div className="h-2.5 bg-slate-200 rounded w-1/3"/><div className="h-2 bg-slate-200 rounded w-2/3"/></div></div>)}</div>}
-                          {productAnalysis?.environments&&productAnalysis.environments.length>0&&(
-                            <div className="p-5 space-y-2">
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Choose a Scene</p>
-                              {productAnalysis.environments.map((env,i)=>(
-                                <motion.button key={env.id} initial={{opacity:0,x:-6}} animate={{opacity:1,x:0}} transition={{delay:i*0.04}}
-                                  onClick={()=>{setSelectedEnvId(env.id);setShowCustomEnv(false);}}
-                                  className={cn("w-full flex items-start gap-3 p-3.5 rounded-2xl border-2 text-left transition-all hover:scale-[1.01]",selectedEnvId===env.id&&!showCustomEnv?"border-violet-500 bg-violet-50 shadow-md shadow-violet-100":"border-slate-100 bg-slate-50 hover:border-violet-200")}>
-                                  <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-600 text-white":"bg-white text-slate-400")}>{ENV_ICONS[env.icon]||<Camera size={13}/>}</div>
-                                  <div className="flex-1 min-w-0"><div className="flex items-center gap-2 mb-0.5"><p className="font-black text-slate-900 text-xs">{env.label}</p><span className={cn("px-1.5 py-0.5 text-[9px] font-black rounded-full uppercase",selectedEnvId===env.id&&!showCustomEnv?"bg-violet-200 text-violet-700":"bg-slate-200 text-slate-500")}>{env.mood}</span></div><p className="text-[10px] text-slate-500 font-medium line-clamp-1">{env.prompt}</p></div>
-                                  {selectedEnvId===env.id&&!showCustomEnv&&<Check size={12} className="text-violet-600 shrink-0 mt-1"/>}
-                                </motion.button>
-                              ))}
-                              <motion.button initial={{opacity:0,x:-6}} animate={{opacity:1,x:0}} transition={{delay:(productAnalysis?.environments?.length||0)*0.04}}
-                                onClick={()=>setShowCustomEnv(true)}
-                                className={cn("w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all",showCustomEnv?"border-rose-500 bg-rose-50":"border-dashed border-slate-200 hover:border-rose-300")}>
-                                <div className={cn("w-8 h-8 rounded-xl flex items-center justify-center shrink-0",showCustomEnv?"bg-rose-600 text-white":"bg-slate-100 text-slate-400")}><Wand2 size={14}/></div>
-                                <div><p className="font-black text-slate-900 text-xs">Custom Scene</p><p className="text-[10px] text-slate-400">Write your own environment</p></div>
-                                {showCustomEnv&&<Check size={12} className="text-rose-600 ml-auto"/>}
-                              </motion.button>
-                              <AnimatePresence>{showCustomEnv&&<motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}}><textarea className="w-full p-4 bg-rose-50 border-2 border-rose-200 rounded-2xl text-sm text-slate-700 focus:ring-2 focus:ring-rose-400 outline-none resize-none h-24 font-medium placeholder-rose-300" value={customEnvPrompt} onChange={e=>setCustomEnvPrompt(e.target.value)} placeholder="Describe the new scene. Product stays identical."/></motion.div>}</AnimatePresence>
-                            </div>
-                          )}
-                          {!isAnalyzingProduct&&(!productAnalysis||!productAnalysis.environments?.length)&&<div className="p-5"><textarea className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl text-sm text-slate-700 focus:ring-2 focus:ring-violet-400 outline-none resize-none h-24 font-medium" value={customEnvPrompt} onChange={e=>setCustomEnvPrompt(e.target.value)} placeholder="Describe the environment where your product should appear."/></div>}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </div>
-                </StepCard>
 
-                {/* Step 3 · Copy & SEO */}
-                <StepCard number={3} title="Copy & SEO Content" subtitle="Headlines, description and tags ready to copy" badge="Auto-generated">
-                  {selectedAngleIndex!==null&&(
-                    <div className="space-y-4">
-                      <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group"><div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Sparkles size={55}/></div><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Viral Psychology</p><p className="text-slate-600 leading-relaxed font-medium italic text-sm">"{strategy.angles[selectedAngleIndex].psychology}"</p></div>
-                      {abVariantB&&(
-                        <div className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-200 rounded-[1.5rem] p-4 space-y-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-violet-600 rounded-lg flex items-center justify-center"><span className="text-white text-[9px] font-black">B</span></div>
-                            <p className="text-xs font-black text-violet-700">A/B Variant · Different Angle</p>
-                          </div>
-                          <p className="font-black text-slate-900 text-sm">"{abVariantB.hook}"</p>
-                          <p className="text-xs text-slate-500">{abVariantB.subtext}</p>
-                          <button onClick={()=>{setEditableHeadline(abVariantB.hook);setEditableSubtext(abVariantB.subtext||"");setEditableCTA(abVariantB.cta||editableCTA);}}
-                            className="text-[10px] font-black text-violet-600 hover:text-violet-700 flex items-center gap-1">
-                            <ArrowRight size={10}/>Use this variant
+                  {selectedAngleIndex !== null && (
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{strategy.angles[selectedAngleIndex].title}</h4>
+                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].title, "title")} className="text-slate-300 hover:text-rose-600 transition-colors">
+                          {copiedField === "title" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium italic">
+                        "{strategy.angles[selectedAngleIndex].psychology}"
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* SEO assets */}
+                {selectedAngleIndex !== null && (
+                  <div className="space-y-8 pt-6 border-t border-slate-100">
+
+                    {/* SEO Title */}
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Target size={20} className="text-rose-600"/></div>
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pinterest Title</h5>
+                          <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].seoTitle || strategy.angles[selectedAngleIndex].title, "seoTitle")}
+                            className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
+                            {copiedField === "seoTitle" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
                           </button>
                         </div>
-                      )}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2"><div className="w-8 h-8 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600"><Search size={16}/></div><p className="font-black text-slate-900 text-sm">SEO Description</p></div>
-                            <div className="flex items-center gap-1">
-                              <button onClick={()=>regenField("description")} disabled={isRegenField==="description"} className="p-1.5 hover:bg-slate-100 rounded-xl text-violet-500 disabled:opacity-50" title="Regenerate">{isRegenField==="description"?<Loader2 size={13} className="animate-spin"/>:<RefreshCw size={13}/>}</button>
-                              <button onClick={()=>copyToClipboard(strategy.angles[selectedAngleIndex].pinDescription,"desc")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="desc"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button>
-                            </div>
-                          </div>
-                          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><p className="text-slate-600 text-xs leading-relaxed whitespace-pre-wrap">{strategy.angles[selectedAngleIndex].pinDescription}</p></div>
-                        </div>
-                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><div className="w-8 h-8 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600"><Accessibility size={16}/></div><p className="font-black text-slate-900 text-sm">Alt Text</p></div><button onClick={()=>copyToClipboard(editableAltText,"alt")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="alt"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button></div><div className="bg-slate-50 p-3 rounded-2xl border border-slate-100"><textarea className="w-full bg-transparent text-slate-600 text-xs leading-relaxed outline-none resize-none h-24 font-medium" value={editableAltText} onChange={e=>setEditableAltText(e.target.value)} placeholder="Describe the image..."/></div></div>
-                        <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm md:col-span-2">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2"><div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600"><Hash size={16}/></div><p className="font-black text-slate-900 text-sm">Viral Tags</p></div>
-                            <div className="flex items-center gap-1">
-                              <button onClick={()=>regenField("hashtags")} disabled={isRegenField==="hashtags"} className="p-1.5 hover:bg-slate-100 rounded-xl text-violet-500 disabled:opacity-50" title="Regenerate">{isRegenField==="hashtags"?<Loader2 size={13} className="animate-spin"/>:<RefreshCw size={13}/>}</button>
-                              <button onClick={()=>copyToClipboard(strategy.angles[selectedAngleIndex].hashtags.join(" "),"tags")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="tags"?<Check size={15} className="text-emerald-500"/>:<Copy size={15}/>}</button>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-2">{strategy.angles[selectedAngleIndex].hashtags.map((tag,i)=><span key={i} className="px-3 py-1.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-100">{tag}</span>)}</div>
-                        </div>
+                        <p className="text-sm font-black text-slate-900 leading-tight">
+                          {strategy.angles[selectedAngleIndex].seoTitle || strategy.angles[selectedAngleIndex].title}
+                        </p>
                       </div>
                     </div>
-                  )}
-                </StepCard>
 
-                {/* Step 4 · Generate Visual */}
-                <StepCard number={4} title="Generate Your Pin Visual" subtitle="AI creates a stunning product image based on your angle and scene">
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-                    {sceneInfo&&<div className={cn("flex items-center gap-2 px-4 py-2 rounded-xl border w-fit text-xs font-bold",sceneInfo.color==="violet"?"bg-violet-50 border-violet-100 text-violet-700":"bg-rose-50 border-rose-100 text-rose-700")}>Scene: {sceneInfo.label}</div>}
-                    {session.imagesLeft<=0?(
-                      <button onClick={()=>setShowUpgradeModal(true)} className="w-full py-5 bg-slate-100 border-2 border-dashed border-slate-300 text-slate-500 font-black text-lg rounded-[1.5rem] flex items-center justify-center gap-3 hover:border-rose-400 hover:text-rose-500 transition-all"><Lock size={19}/>Upgrade for More Images</button>
-                    ):(
-                      <button onClick={generateImage} disabled={isGeneratingImage}
-                        className="w-full py-5 bg-rose-600 hover:bg-rose-700 text-white font-black text-xl rounded-[1.5rem] shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 hover:scale-[1.01] disabled:opacity-50 disabled:hover:scale-100">
-                        {isGeneratingImage?<><Loader2 className="animate-spin" size={21}/>Generating...</>:<><Sparkles size={21}/>Generate AI Visual</>}
-                      </button>
-                    )}
-                    <p className="text-center text-[10px] text-slate-400 font-medium uppercase tracking-widest">{session.imagesLeft} image{session.imagesLeft!==1?"s":""} remaining</p>
-                    {error&&!isGeneratingImage&&<div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl"><AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs font-bold text-rose-700 flex-1">{error}</p><button onClick={()=>setError(null)} className="shrink-0 text-rose-400 hover:text-rose-600"><X size={13}/></button></div>}
-                    {selectedAngleIndex!==null&&<div className="space-y-2 pt-2 border-t border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Headline for Overlay</p>
-                        <button onClick={()=>regenField("headline")} disabled={isRegenField==="headline"}
-                          className="flex items-center gap-1 text-[10px] text-rose-600 hover:text-rose-700 font-black transition-colors disabled:opacity-50">
-                          {isRegenField==="headline"?<Loader2 size={10} className="animate-spin"/>:<RefreshCw size={10}/>}? Regenerate
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">{strategy.angles[selectedAngleIndex].headlines.map((h,i)=><button key={i} onClick={()=>setEditableHeadline(h)} className={cn("px-3 py-2 text-[10px] font-bold rounded-xl border transition-all",editableHeadline===h?"bg-rose-600 border-rose-600 text-white":"bg-white border-slate-100 text-slate-600 hover:border-rose-200")}>Var {i+1}</button>)}</div>
-                    </div>}
-                  </div>
-                </StepCard>
-
-                {/* Step 5 · Voiceover */}
-                <StepCard number={5} title="Voiceover Script" subtitle="Optional · ready-to-record script for your video pin" badge="Optional" dimmed={!generatedImage&&!uploadedImage}>
-                  <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-100">
-                      <div className="flex items-center gap-3 mb-4"><div className="w-9 h-9 bg-rose-100 rounded-xl flex items-center justify-center text-rose-600"><Mic size={17}/></div><div><p className="font-black text-slate-900 text-sm">Auto-Generate Voiceover</p><p className="text-[11px] text-slate-400">15-30 sec · Matched to your angle</p></div></div>
-                      <div className="space-y-2 mb-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tone</p><div className="grid grid-cols-5 gap-2">{VOICE_TONES.map(t=><button key={t.id} onClick={()=>setSelectedVoiceTone(t.id)} className={cn("flex flex-col items-center gap-1 p-2.5 rounded-2xl border-2 transition-all hover:scale-[1.03]",selectedVoiceTone===t.id?"border-rose-500 bg-rose-50":"border-slate-100 bg-slate-50 hover:border-rose-200")}><span className="text-base">{t.emoji}</span><p className={cn("text-[9px] font-black uppercase tracking-tight",selectedVoiceTone===t.id?"text-rose-700":"text-slate-500")}>{t.label}</p></button>)}</div><p className="text-[11px] text-slate-400">{VOICE_TONES.find(t=>t.id===selectedVoiceTone)?.desc}</p></div>
-                      <button onClick={generateVoiceover} disabled={isGeneratingVoiceover||selectedAngleIndex===null} className="w-full py-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-50">{isGeneratingVoiceover?<><Loader2 className="animate-spin" size={15}/>Writing...</>:<><FileText size={15}/>Generate Script</>}</button>
-                    </div>
-                    <AnimatePresence>{voiceoverScript&&(
-                      <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:"auto"}} exit={{opacity:0,height:0}}>
-                        <div className="p-6 space-y-4">
-                          <div className="flex items-center justify-between"><button onClick={()=>setVoiceoverExpanded(!voiceoverExpanded)} className="flex items-center gap-2 text-slate-900 font-black text-sm"><Volume2 size={14} className="text-rose-500"/>Your Script{voiceoverExpanded?<ChevronUp size={12}/>:<ChevronDown size={12}/>}</button><div className="flex items-center gap-2"><span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">🎵 {voiceoverScript.duration}</span><button onClick={()=>copyToClipboard(voiceoverScript.script,"script")} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">{copiedField==="script"?<Check size={13} className="text-emerald-500"/>:<Copy size={13}/>}</button></div></div>
-                          {voiceoverExpanded&&<motion.div initial={{opacity:0}} animate={{opacity:1}} className="space-y-4">
-                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100"><p className="text-slate-700 text-sm leading-loose font-medium whitespace-pre-wrap">{voiceoverScript.script}</p></div>
-                            {voiceoverScript.hooks?.length>0&&<div className="space-y-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Play size={9}/>Alternative Hooks</p>{voiceoverScript.hooks.map((hook,i)=><div key={i} className="flex items-start gap-2 p-3 bg-white border border-slate-100 rounded-2xl group hover:border-rose-200 transition-all"><span className="text-[10px] font-black text-slate-300 mt-0.5 shrink-0">{i+1}</span><p className="text-xs text-slate-600 font-medium flex-1">{hook}</p><button onClick={()=>copyToClipboard(hook,`hook-${i}`)} className="p-1 hover:bg-slate-100 rounded-lg text-slate-300 group-hover:text-slate-400">{copiedField===`hook-${i}`?<Check size={11} className="text-emerald-500"/>:<Copy size={11}/>}</button></div>)}</div>}
-                            <button onClick={generateVoiceover} disabled={isGeneratingVoiceover} className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl flex items-center justify-center gap-2 text-sm disabled:opacity-50"><RefreshCw size={13} className={isGeneratingVoiceover?"animate-spin":""}/>Regenerate</button>
-                          </motion.div>}
-                        </div>
-                      </motion.div>
-                    )}</AnimatePresence>
-                  </div>
-                </StepCard>
-
-                {/* Step 6 · Animate & Export */}
-                <StepCard number={6} title="Animate & Export" subtitle="Bring your pin to life as video, then download everything" dimmed={!generatedImage&&!uploadedImage}>
-                  <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-4">
-                    <div className="space-y-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Animation Vibe</p><textarea className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none transition-all h-20 resize-none font-medium" value={animationPrompt} onChange={e=>setAnimationPrompt(e.target.value)} placeholder="Describe the motion style..."/></div>
-                    <div className="space-y-3">
-                      {(generatedImage||uploadedImage)&&<button onClick={downloadImage} className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl shadow-xl transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={16}/>Download Pin Image</button>}
-                      {session.videosLeft<=0?<button onClick={()=>setShowUpgradeModal(true)} className="w-full py-4 bg-slate-100 border-2 border-dashed border-slate-300 text-slate-500 font-black rounded-2xl flex items-center justify-center gap-2 hover:border-indigo-400 hover:text-indigo-500 transition-all"><Lock size={16}/>Upgrade for Video ({session.plan==="free"?"paid plan required":"add video top-up"})</button>:
-                       (!animatedVideoUrl&&!isAnimating&&(generatedImage||uploadedImage))?<button onClick={animateImage} className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Zap size={16}/>Bring It To Life · {session.videosLeft} left</button>:null}
-                      {animatedVideoUrl&&<div className="space-y-3"><div className="flex justify-center"><div className="aspect-[9/16] w-48 rounded-2xl overflow-hidden bg-slate-100 shadow-inner"><video src={animatedVideoUrl} className="w-full h-full object-cover" controls autoPlay loop muted/></div></div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button onClick={downloadVideo} className="py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2 hover:scale-[1.01]"><Download size={15}/>Download</button>
-                          {session.videosLeft<=0?(
-                            <button onClick={()=>setShowUpgradeModal(true)} className="py-3.5 bg-slate-100 border-2 border-dashed border-slate-300 text-slate-400 font-black rounded-2xl flex items-center justify-center gap-1.5 hover:border-rose-400 hover:text-rose-500 transition-all text-xs"><Lock size={14}/>Extend</button>
-                          ):(
-                            <button onClick={()=>setShowExtendModal(true)} disabled={isExtending||extendCount>=MAX_EXTENSIONS||!(lastVideoOperation?.response?.generatedVideos?.[0]?.video||lastVideoOperation?.response?.generateVideoResponse?.generatedSamples?.[0]?.video)}
-                              className="py-3.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-black rounded-2xl shadow-xl shadow-violet-100 transition-all flex items-center justify-center gap-1.5 hover:scale-[1.01] text-sm">
-                              {isExtending?<><Loader2 className="animate-spin" size={15}/>Extending...</>
-                               :extendCount>=MAX_EXTENSIONS?<><RefreshCw size={15}/>Max Extensions Reached</>
-                               :<><RefreshCw size={15}/>Extend · {extendCount}/{MAX_EXTENSIONS} · {session.videosLeft} left</>}
+                    {/* SEO Description */}
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Search size={20} className="text-indigo-600"/></div>
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pinterest Description</h5>
+                          <div className="flex items-center gap-1">
+                            <button onClick={enhanceSEO} disabled={isEnhancingSEO} title="Enhance SEO with AI"
+                              className="p-1 hover:bg-slate-50 rounded-lg text-violet-400 hover:text-violet-600 disabled:opacity-50 transition-all">
+                              {isEnhancingSEO ? <Loader2 size={13} className="animate-spin"/> : <Zap size={13}/>}
                             </button>
-                          )}
+                            <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].pinDescription, "desc")}
+                              className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
+                              {copiedField === "desc" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-center text-[10px] text-slate-400">Each extension uses 1 video credit</p>
-                      </div>}
-                      {(isAnimating||isExtending)&&<div className="flex items-center gap-3 justify-center py-4 bg-slate-50 rounded-2xl border border-slate-100"><Loader2 className="animate-spin text-rose-500" size={17}/><p className="text-sm font-bold text-slate-600">{isExtending?"Extending video... ~60-90 seconds":"Animating... ~60-90 seconds"}</p></div>}
-                      {error&&!isAnimating&&!isExtending&&<div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl"><AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/><p className="text-xs font-bold text-rose-700">{error}</p></div>}
+                        <div className="max-h-28 overflow-y-auto pr-1">
+                          <p className="text-xs text-slate-600 font-medium leading-relaxed">{strategy.angles[selectedAngleIndex].pinDescription}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Alt Text */}
+                    <div className="flex gap-4">
+                      <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Accessibility size={20} className="text-amber-600"/></div>
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Alt Text</h5>
+                          <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].altText || "", "altText")}
+                            className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
+                            {copiedField === "altText" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-slate-400 font-medium italic">
+                          {strategy.angles[selectedAngleIndex].altText || "Professional product visualization for lifestyle context."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Hashtags */}
+                    <div className="space-y-3 pt-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Hash size={10}/>Viral Tags</label>
+                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].hashtags.join(" "), "tags")}
+                          className="text-slate-300 hover:text-rose-600 transition-colors">
+                          {copiedField === "tags" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {strategy.angles[selectedAngleIndex].hashtags.map((tag, i) => (
+                          <span key={i} className="px-2.5 py-1 bg-white border border-slate-100 rounded-lg text-[9px] font-black text-slate-400 uppercase tracking-tight">{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Editable overlay fields */}
+                    <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-6">
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Headline Override</label>
+                        <input type="text" value={editableHeadline} onChange={e => setEditableHeadline(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Subtext / Social Proof</label>
+                        <input type="text" value={editableSubtext} onChange={e => setEditableSubtext(e.target.value)}
+                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
+                      </div>
                     </div>
                   </div>
-                </StepCard>
+                )}
 
-              </div>
+                {/* Visual controls */}
+                <div className="space-y-6 pt-6 border-t border-slate-100">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Visual Customizer</label>
 
-              {/* Right: sticky preview + tracker */}
-              <div className="lg:col-span-5 sticky top-24 space-y-5">
-                <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-xl shadow-slate-200/50">
-                  <div className="flex items-center justify-between mb-4"><h3 className="text-lg font-black text-slate-900">Pin Preview</h3>{(generatedImage||uploadedImage)&&<button onClick={generateImage} disabled={isGeneratingImage} className="p-2 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-rose-600 transition-all"><RefreshCw size={16} className={isGeneratingImage?"animate-spin":""}/></button>}</div>
-                  {(generatedImage||uploadedImage)?(
-                    <>
-                      <div ref={previewRef} className="aspect-[2/3] bg-slate-100 rounded-[1.75rem] overflow-hidden relative cursor-crosshair touch-none shadow-2xl mx-auto max-w-[280px]"
-                        onMouseMove={handleDrag} onTouchMove={handleDrag} onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
-                        {isGeneratingImage?<div className="absolute inset-0 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm z-30"><Loader2 className="animate-spin text-rose-600 mb-3" size={34}/><p className="font-bold text-slate-900 text-sm">Crafting...</p></div>:(
-                          <><img src={generatedImage||uploadedImage||""} alt={editableAltText||`${productName} product pin`} className="w-full h-full object-cover select-none" referrerPolicy="no-referrer" draggable={false}/>
-                          <div className="absolute inset-0 flex flex-col justify-center items-center pointer-events-none" style={{transform:`translate(${overlayPosition.x}%,${overlayPosition.y}%) scale(${overlayScale})`}}>
-                            <div className="max-w-[88%] pointer-events-auto cursor-move select-none active:scale-95 transition-transform text-center" onMouseDown={handleDragStart} onTouchStart={handleDragStart}>
-                              <p className="text-white font-black text-sm leading-tight mb-1 uppercase italic tracking-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">{editableHeadline}</p>
-                              <p className="text-white text-[9px] font-bold leading-snug mb-2 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] line-clamp-2">{editableSubtext}</p>
-                              {socialProof&&<div className="flex flex-wrap gap-1 justify-center mb-2">
-                                {(socialProof.stars||socialProof.reviews)&&<span className="text-[7px] font-black text-white bg-amber-500/80 backdrop-blur-sm px-1.5 py-0.5 rounded-full shadow">⭐ {socialProof.stars?`${socialProof.stars} Stars`:`${socialProof.reviews} Reviews`}</span>}
-                                {socialProof.sold&&<span className="text-[7px] font-black text-white bg-emerald-600/80 backdrop-blur-sm px-1.5 py-0.5 rounded-full shadow uppercase">{socialProof.sold}</span>}
-                              </div>}
+                  {/* Scale slider */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Overlay Size</span>
+                      <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(overlayScale * 100)}%</span>
+                    </div>
+                    <input type="range" min="0.4" max="1.6" step="0.01" value={overlayScale} onChange={e => setOverlayScale(parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
+                  </div>
 
-                            </div>
-                          </div></>
-                        )}
-                      </div>
-                      <div className="mt-4 space-y-3">
-                        <div className="flex justify-between items-center"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Overlay Size</p><span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(overlayScale*100)}%</span></div>
-                        <input type="range" min="0.5" max="1.5" step="0.05" value={overlayScale} onChange={e=>setOverlayScale(parseFloat(e.target.value))} className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
-                        <p className="text-[10px] text-slate-300 text-center">Drag overlay to reposition</p>
-                        <button onClick={downloadImage}
-                          className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 transition-all hover:scale-[1.01] shadow-md">
-                          <Download size={15}/>Download Pin Preview
-                        </button>
-                        <button onClick={()=>{if(!pinterestToken){setShowPinterestModal(true);}else{setShowScheduleModal(true);fetchPinterestBoards(pinterestToken);}}}
-                          className="w-full py-3 bg-[#E60023] hover:bg-red-700 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 transition-all hover:scale-[1.01] shadow-md shadow-red-100">
-                          <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738.098.119.112.224.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                          {pinterestToken?"Schedule to Pinterest":"Connect Pinterest"}
-                        </button>
-                      </div>
-                    </>
-                  ):(
-                    <div className="aspect-[2/3] max-w-[280px] mx-auto bg-slate-50 border-2 border-dashed border-slate-200 rounded-[1.75rem] flex flex-col items-center justify-center gap-3 text-center p-6"><div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm"><ImageIcon size={22} className="text-slate-200"/></div><div><p className="font-black text-slate-400 text-sm">Pin preview</p><p className="text-xs text-slate-300 mt-0.5">Complete steps 1-4</p></div></div>
-                  )}
-                </div>
-
-                {/* Progress tracker */}
-                <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Your Progress</p>
-                  <div className="space-y-2.5">
-                    {[{label:"Viral Angle",done:selectedAngleIndex!==null},{label:"Product Photo",done:!!uploadedImage},{label:"Copy & SEO",done:!!editableHeadline},{label:"AI Visual",done:!!generatedImage},{label:"Voiceover Script",done:!!voiceoverScript,optional:true},{label:"Animate / Export",done:!!animatedVideoUrl,optional:true}].map(step=>(
-                      <div key={step.label} className="flex items-center gap-3"><div className={cn("w-5 h-5 rounded-full flex items-center justify-center shrink-0",step.done?"bg-emerald-500":"bg-slate-100 border-2 border-slate-200")}>{step.done&&<Check size={10} className="text-white"/>}</div><p className={cn("text-xs font-bold",step.done?"text-slate-700":"text-slate-400")}>{step.label}{step.optional&&<span className="ml-1.5 text-[9px] font-medium text-slate-300 uppercase">optional</span>}</p></div>
+                  {/* Aspect ratio */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ id:"9:16", label:"9:16 vertical" },{ id:"2:3", label:"2:3 classic" }].map(r => (
+                      <button key={r.id} onClick={() => setAspectRatio(r.id as any)}
+                        className={cn("py-2.5 rounded-xl border-2 text-[10px] font-black uppercase transition-all tracking-widest",
+                          aspectRatio === r.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-50 text-slate-300")}>
+                        {r.label}
+                      </button>
                     ))}
                   </div>
+
+                  {/* Cloning mode */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["direct","stylized","reimagine","variation"] as const).map(m => (
+                      <button key={m} onClick={() => setCloningMode(m)}
+                        className={cn("py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all tracking-widest capitalize",
+                          cloningMode === m ? "bg-rose-600 border-rose-600 text-white" : "bg-white border-slate-100 text-slate-400 hover:border-rose-200")}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom prompt */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Palette size={10}/> Creative Mode</label>
+                    <textarea value={customVisualPrompt} onChange={e => setCustomVisualPrompt(e.target.value)}
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] text-slate-600 focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 outline-none transition-all h-20 resize-none font-medium"
+                      placeholder="Describe the environment (e.g. 'Marble tabletop', 'Minimalist white studio')…"/>
+                  </div>
+
+                  <button onClick={() => generateImage()} disabled={isGeneratingImage}
+                    className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60">
+                    {isGeneratingImage ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
+                    {isMockMode ? "Preview Visual (Draft)" : "Regenerate Visual Identity"}
+                  </button>
+                  <p className="text-[9px] text-slate-400 text-center font-bold italic">
+                    {isMockMode ? "Draft mode is free — toggle off to use real AI credits." : "Visual regeneration uses AI image credits."}
+                  </p>
                 </div>
 
-                {/* Account quick panel */}
-                <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{planDef.emoji}</span>
-                      <div><p className="text-xs font-black text-slate-800 capitalize">{session.plan} Plan</p><p className="text-[9px] text-slate-400">{session.imagesLeft} imgs · {session.videosLeft} vids left</p></div>
+                <button onClick={resetApp}
+                  className="w-full py-3 text-[10px] font-black text-slate-300 hover:text-rose-500 uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2">
+                  <Plus size={14}/> New Campaign
+                </button>
+              </div>
+            </div>
+
+            {/* Right: main visual workspace */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 min-h-[750px] flex flex-col">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
+                      {isGeneratingImage ? <Loader2 className="animate-spin text-rose-600" size={18}/> : <Eye size={18} className="text-slate-400"/>}
                     </div>
-                    <button onClick={()=>setShowAccountModal(true)} className="px-3 py-1.5 text-[10px] font-black text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all flex items-center gap-1"><Settings size={11}/>Manage</button>
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 tracking-tight">Identity Locked Pin</h3>
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-0.5">Final Creative Output</p>
+                    </div>
                   </div>
-                  {session.plan==="free"&&(
-                    <button onClick={()=>setShowUpgradeModal(true)} className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-100 transition-all hover:scale-[1.01]"><Crown size={14}/>Upgrade for More Images & Videos</button>
+                  <button onClick={downloadImage} className="p-3 bg-slate-50 hover:bg-rose-50 rounded-2xl text-slate-400 hover:text-rose-600 transition-all shadow-sm active:scale-90">
+                    <Download size={20}/>
+                  </button>
+                </div>
+
+                {/* Pin canvas */}
+                <div ref={previewRef}
+                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)]",
+                    aspectRatio === "9:16" ? "max-w-[400px] aspect-[9/16]" : "max-w-[450px] aspect-[2/3]")}
+                  onMouseMove={handleDrag} onTouchMove={handleDrag}
+                  onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
+
+                  {isGeneratingImage ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 backdrop-blur-xl z-30">
+                      <div className="relative w-24 h-24 mb-6">
+                        <div className="absolute inset-0 border-8 border-rose-100 rounded-full"/>
+                        <div className="absolute inset-0 border-8 border-rose-600 rounded-full border-t-transparent animate-spin"/>
+                        <div className="absolute inset-0 flex items-center justify-center"><Target size={32} className="text-rose-600 animate-pulse"/></div>
+                      </div>
+                      <p className="font-black text-slate-900 text-xl tracking-tight">Generating…</p>
+                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-[0.3em]">Identity Preservation 100%</p>
+                    </div>
+                  ) : (
+                    <>
+                      <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
+                        className="w-full h-full object-cover select-none pointer-events-none"
+                        referrerPolicy="no-referrer" draggable={false}/>
+
+                      {/* Draggable text overlay */}
+                      <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none"
+                        style={{ transform: `translate(${overlayPosition.x}%, ${overlayPosition.y}%) scale(${overlayScale})` }}>
+                        <div className="w-full pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
+                          onMouseDown={handleDragStart} onTouchStart={handleDragStart}>
+                          <div className="space-y-4 text-center">
+                            <motion.div key={editableHeadline} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="px-6">
+                              <h2 className="text-white font-black text-3xl sm:text-5xl uppercase italic tracking-tighter leading-[0.8] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] mb-3">
+                                {editableHeadline.split(" ").map((word, i) => (
+                                  <span key={i} className={i % 3 === 0 ? "text-rose-500" : ""}>{word}{" "}</span>
+                                ))}
+                              </h2>
+                            </motion.div>
+                            <p className="text-white text-[10px] sm:text-[11px] font-black leading-tight px-12 [text-shadow:_0_4px_12px_rgb(0_0_0_/_95%)] mb-8 uppercase tracking-[0.2em] opacity-90 italic">
+                              {editableSubtext}
+                            </p>
+                            <div className="flex flex-wrap justify-center gap-2 mb-10">
+                              <div className="bg-white/10 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 scale-110">
+                                <div className="flex -space-x-1">
+                                  {[0,1,2].map(i => (
+                                    <div key={i} className="w-5 h-5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center overflow-hidden">
+                                      <Star size={8} fill="white" className="text-white"/>
+                                    </div>
+                                  ))}
+                                </div>
+                                <span className="text-[10px] font-black text-white tracking-widest uppercase">
+                                  {socialProof?.stars || "4.9"} · {socialProof?.reviews || "850"} REVIEWS
+                                </span>
+                              </div>
+                            </div>
+                            <div className="inline-flex px-12 py-5 bg-rose-600 text-white text-[10px] font-black rounded-full uppercase tracking-[0.4em] shadow-[0_25px_50px_rgba(225,29,72,0.6)]">
+                              {editableCTA}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
+
+                {/* Headline / subtext variants */}
+                {selectedAngleIndex !== null && (
+                  <div className="mt-auto pt-10 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-slate-100">
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
+                        <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {strategy.angles[selectedAngleIndex].headlines.map((h, i) => (
+                          <button key={i} onClick={() => setEditableHeadline(h)}
+                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
+                              editableHeadline === h ? "bg-rose-600 border-rose-600 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
+                            Var {i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
+                      <div className="flex flex-wrap gap-2">
+                        {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
+                          <button key={i} onClick={() => setEditableSubtext(s)}
+                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
+                              editableSubtext === s ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
+                            Proof {i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Animation controls */}
+                {(generatedImage || uploadedImage) && (
+                  <div className="mt-10 pt-10 border-t border-slate-100 space-y-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Animation Vibe</label>
+                    <textarea value={animationPrompt} onChange={e => setAnimationPrompt(e.target.value)}
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none h-16 resize-none font-medium"
+                      placeholder="Describe the motion style (optional)…"/>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={animateImage} disabled={isAnimating || isExtending}
+                        className="py-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-sm rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2">
+                        {isAnimating ? <><Loader2 className="animate-spin" size={16}/>Animating…</> : <><Zap size={16}/>Animate · {creationsLeft} left</>}
+                      </button>
+                      <button onClick={extendAnimation} disabled={isAnimating || isExtending || !animatedVideoUrl}
+                        className="py-4 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white font-black text-sm rounded-2xl transition-all flex items-center justify-center gap-2">
+                        {isExtending ? <><Loader2 className="animate-spin" size={16}/>Extending…</> : <><RefreshCw size={16}/>Extend</>}
+                      </button>
+                    </div>
+                    {animatedVideoUrl && (
+                      <div className="space-y-3">
+                        <div className="flex justify-center">
+                          <div className="aspect-[9/16] w-40 rounded-2xl overflow-hidden bg-slate-100 shadow-inner">
+                            <video src={animatedVideoUrl} className="w-full h-full object-cover" controls autoPlay loop muted/>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <textarea value={extensionPrompt} onChange={e => setExtensionPrompt(e.target.value)}
+                            className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none h-12 resize-none font-medium"
+                            placeholder="Extension motion direction (optional)…"/>
+                          <button onClick={downloadAnimation}
+                            className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-sm">
+                            <Download size={15}/> Download Video
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Video storyboard */}
+                {selectedAngleIndex !== null && strategy.angles[selectedAngleIndex].videoPrompts?.length > 0 && (
+                  <div className="mt-12 pt-12 border-t border-slate-100 space-y-8">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600"><Video size={18}/></div>
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight">Viral Video Storyboard</h3>
+                        </div>
+                        <p className="text-slate-400 text-sm font-medium">5 AI-optimized scripts for high-converting video Pins.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-3">
+                        <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:border-rose-200 hover:text-rose-600 transition-all shadow-sm">
+                          Pinterest Home
+                        </a>
+                        <a href="https://vid.ai/?ref=wong44" target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-slate-900 border-2 border-slate-900 transition-all shadow-xl shadow-slate-200 group">
+                          Create Main Video <ExternalLink size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"/>
+                        </a>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {strategy.angles[selectedAngleIndex].videoPrompts.map((prompt, i) => (
+                        <div key={i} className="group flex gap-4 p-5 bg-white border border-slate-100 rounded-[2rem] hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-50/50 transition-all">
+                          <div className="flex flex-col items-center gap-2 shrink-0">
+                            <div className="w-8 h-8 bg-slate-50 group-hover:bg-indigo-500 rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:text-white transition-all">{i+1}</div>
+                            <div className="w-px flex-1 bg-slate-100 group-hover:bg-indigo-100 transition-all"/>
+                          </div>
+                          <div className="space-y-2 py-1 flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest group-hover:text-indigo-400 transition-colors">Scene Script</span>
+                              <button onClick={() => copyToClipboard(prompt, `video-${i}`)} className="text-slate-200 hover:text-indigo-600 transition-colors">
+                                {copiedField === `video-${i}` ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                              </button>
+                            </div>
+                            <p className="text-xs text-slate-600 font-bold leading-relaxed">{prompt}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                      className="bg-gradient-to-r from-indigo-600 to-indigo-500 p-6 rounded-[2.5rem] shadow-2xl shadow-indigo-200 text-white relative overflow-hidden">
+                      <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0"><Zap size={24} className="text-white animate-pulse"/></div>
+                          <div className="text-center md:text-left">
+                            <h4 className="text-lg font-black tracking-tight leading-none mb-1">Want Long or Short Videos?</h4>
+                            <p className="text-indigo-100 text-[11px] font-bold uppercase tracking-wider opacity-80">vid.ai handles both with extreme fidelity</p>
+                          </div>
+                        </div>
+                        <a href="https://vid.ai/?ref=wong44" target="_blank" rel="noopener noreferrer"
+                          className="px-8 py-4 bg-white text-indigo-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl">
+                          Scale Content
+                        </a>
+                      </div>
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -translate-y-16 translate-x-16"/>
+                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-400/20 rounded-full blur-3xl translate-y-16 -translate-x-16"/>
+                    </motion.div>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="mt-6 flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                    <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
+                    <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
+                    <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
         )}
 
         {/* Empty state */}
-        {!strategy&&!isLoading&&(
-          <motion.div initial={{opacity:0}} animate={{opacity:1}} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-            <FeatureCard icon={<Zap className="text-rose-500"/>}       title="Viral Psychology"     desc="Proven impulse-buy triggers that get your pins saved and shared."/>
-            <FeatureCard icon={<Shuffle className="text-violet-500"/>} title="5 Auto Scene Options" desc="Upload once · AI places your product in 5 stunning Pinterest-ready scenes."/>
-            <FeatureCard icon={<Mic className="text-rose-500"/>}       title="Voiceover Scripts"    desc="Ready-to-record script matched to your pin's tone and angle."/>
+        {!strategy && !isLoading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+            <FeatureCard icon={<Zap className="text-rose-500"/>} title="Viral Psychology" desc="Proven impulse-buy triggers ensure your pins get saved."/>
+            <FeatureCard icon={<Search className="text-rose-500"/>} title="SEO Optimized" desc="Descriptions packed with high-volume Pinterest keywords."/>
+            <FeatureCard icon={<ImageIcon className="text-rose-500"/>} title="AI Visuals" desc="Generate stunning product images via Imagen & Gemini."/>
           </motion.div>
         )}
 
         {/* Pricing */}
         <section id="pricing-section" className="py-24 border-t border-slate-100">
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center max-w-3xl mx-auto mb-12">
-              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-5 tracking-tight leading-tight">Turn Products Into Viral Content · <span className="text-rose-600">Without Designers</span></h2>
-              <p className="text-lg text-slate-600 mb-6">High-converting Pinterest visuals in seconds.</p>
-              {!stripe.keysPresent&&<motion.div initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className="inline-flex items-center gap-3 px-5 py-3 bg-amber-50 border border-amber-200 rounded-2xl mb-6"><CreditCard size={15} className="text-amber-600"/><p className="text-sm text-amber-700 font-medium">Add Stripe keys to .env to activate checkout</p><button onClick={()=>setShowStripeSetup(true)} className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700">Setup Stripe</button></motion.div>}
-              <div className="flex justify-center"><div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl">{(["monthly","annual"] as const).map(c=><button key={c} onClick={()=>setBillingCycle(c)} className={cn("px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",billingCycle===c?"bg-white shadow text-slate-900":"text-slate-500 hover:text-slate-700")}>{c.charAt(0).toUpperCase()+c.slice(1)}{c==="annual"&&<span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-full uppercase">Save 30%</span>}</button>)}</div></div>
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+                Turn Products Into Viral Content — <span className="text-rose-600">Without Designers or Guesswork</span>
+              </h2>
+              <p className="text-lg text-slate-600 mb-2">Create high-converting Pinterest visuals and animations in seconds.</p>
+              <p className="text-sm font-bold text-rose-500 uppercase tracking-widest">Only pay for what you actually use.</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-16">
-              {(["starter","pro","scale","agency"] as const).map(key => {
-                const p=PLAN_DEFS[key]; const price=billingCycle==="annual"?p.annual:p.monthly; const lk=checkoutLoading===`${key}_${billingCycle}`;
-                const isCurrent=session.plan===key;
-                return (
-                  <div key={key} className={cn("relative bg-white p-6 rounded-[28px] border flex flex-col h-full transition-all duration-300",p.popular?"border-rose-200 shadow-xl shadow-rose-100 scale-105 z-10":isCurrent?"border-emerald-300 shadow-md":"border-slate-200 shadow-sm hover:shadow-md")}>
-                    {p.popular&&<div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest whitespace-nowrap">Most Popular</div>}
-                    {isCurrent&&<div className="absolute -top-3 right-4 bg-emerald-500 text-white text-[9px] font-bold px-2.5 py-0.5 rounded-full uppercase">Current</div>}
-                    <div className="mb-4"><div className="flex items-center gap-2 mb-1"><span className="text-xl">{p.emoji}</span><h3 className="text-base font-bold text-slate-900 uppercase tracking-tight">{key.charAt(0).toUpperCase()+key.slice(1)}</h3></div><div className="flex items-baseline gap-1 mb-0.5"><span className="text-3xl font-black text-slate-900">${price}</span><span className="text-slate-400 text-sm">/mo</span></div>{billingCycle==="annual"&&<p className="text-[10px] font-bold text-emerald-600">${Math.round(price*12)} billed annually</p>}<p className="text-slate-500 text-xs mt-1">{p.desc}</p></div>
-                    <div className="flex gap-2 mb-4"><div className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 rounded-xl border border-rose-100"><ImageIcon size={11} className="text-rose-500"/><span className="text-[11px] font-black text-rose-700">{p.images.toLocaleString()} imgs</span></div><div className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 rounded-xl border border-indigo-100"><Video size={11} className="text-indigo-500"/><span className="text-[11px] font-black text-indigo-700">{p.videos} vids</span></div></div>
-                    <ul className="space-y-1.5 mb-5 flex-grow">{p.features.map((f,i)=><li key={i} className="flex items-start gap-2 text-xs text-slate-600"><Check size={13} className="text-emerald-500 shrink-0 mt-0.5"/>{f}</li>)}</ul>
-                    {p.bonus&&<div className="p-3 bg-rose-50 rounded-xl border border-rose-100 mb-4"><div className="flex items-center gap-1 text-rose-600 font-bold text-xs mb-0.5"><Sparkles size={11}/>Bonus</div><p className="text-rose-700 text-[11px] font-medium">{p.bonus}</p></div>}
-                    <button onClick={()=>startCheckout(key,billingCycle)} disabled={!!checkoutLoading||isCurrent}
-                      className={cn("w-full py-3.5 rounded-2xl font-bold transition-all flex items-center justify-center gap-2 text-sm disabled:opacity-60",
-                        isCurrent?"bg-emerald-100 text-emerald-700 cursor-default":p.popular?"bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-200":"bg-slate-900 hover:bg-slate-800 text-white")}>
-                      {lk?<><Loader2 className="animate-spin" size={14}/>Redirecting...</>:isCurrent?<><Check size={14}/>Current Plan</>:<><CreditCard size={14}/>{stripe.ready?"Subscribe":"Setup & Subscribe"}<ArrowRight size={13}/></>}
-                    </button>
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <PricingCard emoji="🟢" tier="Starter" price="$19" description="For beginners testing products"
+                features={["Up to 50 Viral Pins","Pinterest strategy generator","AI image creation","Animation enabled"]} cta="Start Creating"/>
+              <PricingCard emoji="⭐" tier="Pro" price="$39" description="For serious sellers" isPopular
+                features={["Up to 150 Viral Pins","Full strategy system","Premium animations","Priority support"]} cta="Go Viral Faster"/>
+              <PricingCard emoji="🚀" tier="Scale" price="$79" description="For agencies"
+                features={["Up to 400 Viral Pins","Extended animations","API Access","High priority"]} cta="Scale My Content"/>
             </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-              <div className="bg-slate-50 p-8 rounded-[32px] border border-slate-200">
-                <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center text-rose-600"><Plus size={17}/></div><h3 className="text-xl font-bold text-slate-900">Top-up Packs</h3></div>
-                <p className="text-slate-500 text-sm mb-5">Add quota to your current plan without upgrading.</p>
-                <div className="space-y-3">{TOPUP_PACKS.map(p=>{const lk=checkoutLoading===p.key;return(<button key={p.key} onClick={()=>startCheckout("topup","monthly",p.key)} disabled={!!checkoutLoading} className={cn("w-full flex items-center justify-between p-3 bg-white rounded-xl border transition-all hover:scale-[1.01] disabled:opacity-60",p.highlight?"border-rose-200 shadow-sm":"border-slate-100 hover:border-rose-200")}><span className="text-sm font-medium text-slate-700">{p.label}{p.highlight&&<span className="text-[10px] text-rose-500 font-bold ml-2">Best Value</span>}</span><div className="flex items-center gap-2">{lk&&<Loader2 size={12} className="animate-spin text-rose-500"/>}<span className="text-base font-black text-rose-600">${p.price}</span></div></button>);})}</div>
-              </div>
-              <div className="bg-white p-8 rounded-[32px] border border-slate-200 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-xl font-bold text-slate-900 mb-2">Free Plan</h3>
-                  <p className="text-slate-500 text-sm mb-5">Try before you commit. No credit card required.</p>
-                  <ul className="space-y-2 mb-5">{["2 AI image generations","5 auto scene environments","Pinterest strategy generator","Voiceover script generator","No credit card needed"].map((f,i)=><li key={i} className="flex items-center gap-2 text-sm text-slate-600"><Check size={14} className="text-emerald-500"/>{f}</li>)}<li className="flex items-center gap-2 text-sm text-slate-400"><AlertCircle size={14} className="text-amber-400"/>Videos require a paid plan</li></ul>
-                </div>
-                {session.plan==="free"?<div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-700 text-sm font-bold"><Check size={15}/>You're on the free plan</div>:<button className="w-full px-8 py-4 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl transition-all flex items-center justify-center gap-2">Try for Free<ArrowRight size={15}/></button>}
-              </div>
-            </div>
-            <div className="text-center"><p className="text-xl md:text-2xl font-bold text-slate-400 italic">"Create scroll-stopping content at scale · <span className="text-slate-900">without hiring designers or editors.</span>"</p></div>
           </div>
         </section>
       </main>
 
-      <footer className="border-t border-slate-200 py-10 bg-white">
-        <div className="max-w-6xl mx-auto px-4 text-center space-y-3">
-          <div className="flex items-center justify-center gap-2"><div className="w-6 h-6 bg-rose-600 rounded flex items-center justify-center text-white"><Sparkles size={12}/></div><span className="font-bold text-slate-800">PinViral</span></div>
-          <p className="text-slate-400 text-sm">Built for e-commerce brands and lifestyle creators. · 2026 PinViral AI.</p>
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-400">
-            <button onClick={()=>setShowTermsPage(true)} className="hover:text-rose-600 transition-colors">Terms of Service</button>
-            <span>·</span>
-            <button onClick={()=>setShowPrivacyPage(true)} className="hover:text-rose-600 transition-colors">Privacy Policy</button>
-            <span>·</span>
-            <button onClick={()=>setShowRefundPage(true)} className="hover:text-rose-600 transition-colors">Refund Policy</button>
+      <footer className="bg-slate-900 border-t border-white/10 py-16 px-6 text-white mt-12">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/40"><Sparkles size={20} className="text-white"/></div>
+            <span className="text-2xl font-black tracking-tight">PIN<span className="text-rose-500">VIRAL</span></span>
           </div>
-          <p className="text-slate-300 text-xs flex items-center justify-center gap-2"><CreditCard size={11}/>Payments by Stripe · Images processed by Google Gemini</p>
-          <div className="flex items-center justify-center gap-4 pt-2 text-xs text-slate-300">
-            <button onClick={()=>setTourStep(1)} className="hover:text-rose-500 transition-colors flex items-center gap-1"><Sparkles size={10}/>How it works</button>
-            <span>·</span>
-            <button onClick={()=>{localStorage.removeItem("_pv_consent_v2");setCookieConsent(null);setShowCookieBanner(true);}} className="hover:text-rose-500 transition-colors">Cookie Settings</button>
-            <span>·</span>
-            <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer" className="hover:text-rose-500 transition-colors flex items-center gap-1">
-              <svg viewBox="0 0 24 24" className="w-3 h-3 fill-current"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738.098.119.112.224.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-              Pinterest
-            </a>
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">© 2026 PinViral. Not affiliated with Pinterest Inc.</p>
+          <div className="flex items-center gap-2 text-emerald-500">
+            <div className="w-1.5 h-1.5 bg-current rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]"/>
+            <span className="text-[10px] font-black uppercase tracking-widest">Systems Operational</span>
           </div>
         </div>
       </footer>
 
-      {/* -- Pinterest Connect Modal -- */}
-      <AnimatePresence>{showPinterestModal&&(
-        <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <motion.div initial={{opacity:0,scale:0.93,y:12}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.93}} className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden">
-            <div className="bg-[#E60023] p-6 text-white">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <svg viewBox="0 0 24 24" className="w-7 h-7 fill-white"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738.098.119.112.224.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                  <h3 className="font-black text-xl">Connect Pinterest</h3>
-                </div>
-                <button onClick={()=>setShowPinterestModal(false)} className="w-7 h-7 bg-white/20 rounded-full flex items-center justify-center"><X size={14}/></button>
+      {/* Full-screen animation loading overlay */}
+      <AnimatePresence>
+        {(isAnimating || isExtending) && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-white/80 backdrop-blur-md">
+            <div className="text-center space-y-4">
+              <div className="relative w-20 h-20 mx-auto">
+                <div className="absolute inset-0 border-4 border-rose-100 rounded-full"/>
+                <div className="absolute inset-0 border-4 border-rose-600 rounded-full border-t-transparent animate-spin"/>
+                <div className="absolute inset-0 flex items-center justify-center text-rose-600"><Wand2 size={32} className="animate-pulse"/></div>
               </div>
-              <p className="text-red-200 text-xs">Schedule your pins directly to Pinterest boards.</p>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="space-y-2 text-sm text-slate-600">
-                <p className="font-bold text-slate-900">What you'll get:</p>
-                <div className="flex items-center gap-2"><Check size={14} className="text-emerald-500"/><span>Schedule pins to any board</span></div>
-                <div className="flex items-center gap-2"><Check size={14} className="text-emerald-500"/><span>Auto-fill title, description & alt text</span></div>
-                <div className="flex items-center gap-2"><Check size={14} className="text-emerald-500"/><span>Set publish date & time</span></div>
-              </div>
-              <p className="text-[10px] text-slate-400 bg-slate-50 p-3 rounded-xl border border-slate-100">You'll be redirected to Pinterest to authorize access. We only request permission to read your boards and create pins.</p>
-              <div className="flex gap-3">
-                <button onClick={()=>setShowPinterestModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl text-sm">Cancel</button>
-                <button onClick={()=>{setShowPinterestModal(false);connectPinterest();}} className="flex-1 py-3 bg-[#E60023] hover:bg-red-700 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2">
-                  <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738.098.119.112.224.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                  Connect with Pinterest
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}</AnimatePresence>
-
-      {/* -- Schedule Pin Modal -- */}
-      <AnimatePresence>{showScheduleModal&&(
-        <div className="fixed inset-0 z-[160] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <motion.div initial={{opacity:0,scale:0.93,y:12}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.93}} className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden">
-            <div className="bg-[#E60023] p-5 text-white flex items-center justify-between">
-              <h3 className="font-black text-lg">Schedule Pin</h3>
-              <button onClick={()=>{setShowScheduleModal(false);setScheduledSuccess(false);}} className="w-7 h-7 bg-white/20 rounded-full flex items-center justify-center"><X size={14}/></button>
-            </div>
-            <div className="p-6 space-y-4">
-              {scheduledSuccess?(
-                <div className="text-center py-6 space-y-3">
-                  <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto"><Check size={24} className="text-emerald-600"/></div>
-                  <p className="font-black text-slate-900">Pin Scheduled!</p>
-                  <p className="text-sm text-slate-500">Your pin has been sent to Pinterest successfully.</p>
-                </div>
-              ):(
-                <>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Board</label>
-                    <select value={scheduleBoard} onChange={e=>setScheduleBoard(e.target.value)}
-                      className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-red-400">
-                      <option value="">Select a board...</option>
-                      {pinterestBoards.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Publish Date <span className="normal-case font-normal text-slate-300">(optional · publish now if blank)</span></label>
-                    <input type="datetime-local" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)}
-                      className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 outline-none focus:ring-2 focus:ring-red-400"/>
-                  </div>
-                  <div className="flex gap-3">
-                    <button onClick={()=>setShowScheduleModal(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl text-sm">Cancel</button>
-                    <button onClick={schedulePin} disabled={!scheduleBoard||isScheduling}
-                      className="flex-1 py-3 bg-[#E60023] hover:bg-red-700 disabled:opacity-50 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2">
-                      {isScheduling?<Loader2 size={14} className="animate-spin"/>:<svg viewBox="0 0 24 24" className="w-4 h-4 fill-white"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738.098.119.112.224.083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>}
-                      {isScheduling?"Scheduling...":scheduleDate?"Schedule":"Publish Now"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </motion.div>
-        </div>
-      )}</AnimatePresence>
-
-      {/* -- Cookie Consent Banner -- */}
-      <AnimatePresence>{showCookieBanner&&cookieConsent===null&&(
-        <motion.div initial={{y:100,opacity:0}} animate={{y:0,opacity:1}} exit={{y:100,opacity:0}}
-          className="fixed bottom-0 left-0 right-0 z-[200] bg-slate-900 text-white p-4 sm:p-5">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex-1 text-sm leading-relaxed">
-              <p className="font-bold mb-1">We use cookies & browser fingerprinting</p>
-              <p className="text-slate-300 text-xs">We use browser fingerprinting (canvas, audio, navigator properties) stored in localStorage and IndexedDB to enforce free-plan limits. Your product images are sent to Google Gemini API for processing. By continuing, you agree to our <button onClick={()=>{setShowCookieBanner(false);setShowPrivacyPage(true);}} className="underline text-rose-400">Privacy Policy</button>.</p>
-            </div>
-            <div className="flex gap-3 shrink-0">
-              <button onClick={()=>{setCookieConsent("declined");setShowCookieBanner(false);localStorage.setItem("_pv_consent_v2","declined");}}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-bold transition-colors">Decline</button>
-              <button onClick={()=>{setCookieConsent("accepted");setShowCookieBanner(false);localStorage.setItem("_pv_consent_v2","accepted");}}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 rounded-xl text-xs font-black transition-colors">Accept All</button>
+              <h4 className="text-lg font-bold text-slate-900">{isExtending ? "Extending…" : "Creating Magic…"}</h4>
+              <p className="text-sm text-slate-400">Video generation takes ~60–90 seconds</p>
             </div>
           </div>
-        </motion.div>
-      )}</AnimatePresence>
-
-      {/* Modals */}
-      <AnimatePresence>{showAccountModal&&<AccountModal/>}</AnimatePresence>
-      <AnimatePresence>{showUpgradeModal&&<UpgradeModal/>}</AnimatePresence>
-      <AnimatePresence>{showPricingModal&&<PricingModal/>}</AnimatePresence>
-      <AnimatePresence>{showStripeSetup&&<StripeSetupModal/>}</AnimatePresence>
-
-      {/* Extend Video Modal */}
-      <AnimatePresence>{showExtendModal&&(
-        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <motion.div initial={{opacity:0,scale:0.93,y:12}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.93,y:12}}
-            className="bg-white rounded-[2rem] shadow-2xl max-w-sm w-full overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-br from-violet-600 to-violet-700 p-6 text-white">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center"><RefreshCw size={16}/></div>
-                  <h3 className="font-black text-lg">Extend Video</h3>
-                </div>
-                <button onClick={()=>setShowExtendModal(false)} className="w-7 h-7 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-all"><X size={14}/></button>
-              </div>
-              <p className="text-violet-200 text-xs">Continue from your last video with optional custom direction.</p>
-            </div>
-            {/* Body */}
-            <div className="p-6 space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Custom Direction <span className="normal-case font-normal text-slate-300">(optional)</span></label>
-                <textarea
-                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm text-slate-700 focus:ring-2 focus:ring-violet-400 outline-none resize-none h-28 transition-all placeholder-slate-300"
-                  placeholder={"e.g. slow zoom in on the product label\ne.g. add steam rising from the cup\ne.g. camera pans left to reveal background"}
-                  value={extendCustomPrompt}
-                  onChange={e=>setExtendCustomPrompt(e.target.value)}
-                  autoFocus
-                />
-                <p className="text-[10px] text-slate-400">Leave blank to continue naturally from where the video ended.</p>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={()=>setShowExtendModal(false)}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-2xl text-sm transition-all">
-                  Cancel
-                </button>
-                <button onClick={()=>{setShowExtendModal(false); extendVideo(extendCustomPrompt.trim()||undefined); setExtendCustomPrompt("");}}
-                  className="flex-1 py-3 bg-violet-600 hover:bg-violet-700 text-white font-black rounded-2xl text-sm shadow-lg shadow-violet-100 transition-all flex items-center justify-center gap-2">
-                  <RefreshCw size={14}/> Extend · {session.videosLeft} left
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}</AnimatePresence>
-
-      {/* -- Guided Tour Overlay -- */}
-      <AnimatePresence>{tourStep>0&&tourStep<=3&&(
-        <div className="fixed inset-0 z-[300] pointer-events-none">
-          <div className="pointer-events-auto absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-            <motion.div initial={{opacity:0,scale:0.9,y:16}} animate={{opacity:1,scale:1,y:0}} exit={{opacity:0,scale:0.9}}
-              className="bg-white rounded-[2rem] shadow-2xl border border-slate-100 p-8 max-w-sm w-full text-center space-y-4 mx-4">
-              <div className="flex justify-center gap-2 mb-2">
-                {[1,2,3].map(i=><div key={i} className={`h-1.5 w-8 rounded-full transition-all ${i<=tourStep?"bg-rose-600":"bg-slate-200"}`}/>)}
-              </div>
-              {tourStep===1&&<>
-                <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto"><Sparkles size={24} className="text-rose-600"/></div>
-                <h3 className="text-xl font-black text-slate-900">Welcome to PinViral</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">Create viral Pinterest pins with AI in 3 steps. Let's walk you through it.</p>
-                <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-2">
-                  <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-rose-600 rounded-full flex items-center justify-center text-white text-[10px] font-black">1</div><span className="text-slate-600 font-medium">Paste your product URL or name</span></div>
-                  <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 text-[10px] font-black">2</div><span className="text-slate-400">We'll analyze & generate viral angles</span></div>
-                  <div className="flex items-center gap-3 text-sm"><div className="w-6 h-6 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 text-[10px] font-black">3</div><span className="text-slate-400">Pick an angle ? Generate your pin</span></div>
-                </div>
-              </>}
-              {tourStep===2&&<>
-                <div className="w-14 h-14 bg-violet-100 rounded-2xl flex items-center justify-center mx-auto"><Wand2 size={24} className="text-violet-600"/></div>
-                <h3 className="text-xl font-black text-slate-900">Step 2: Pick a Viral Angle</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">After analyzing your product, we'll generate 3 angles based on proven Pinterest psychology · Curiosity, Social Proof, or FOMO. Pick the one that fits your audience.</p>
-                <div className="bg-violet-50 rounded-2xl p-3 border border-violet-100 text-left"><p className="text-xs text-violet-700 font-medium italic">"Survival Preparedness · The Perfect Gift · Hiker's Essential"</p><p className="text-[10px] text-violet-400 mt-1">? Example angles for a multi-tool product</p></div>
-              </>}
-              {tourStep===3&&<>
-                <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto"><ImageIcon size={24} className="text-emerald-600"/></div>
-                <h3 className="text-xl font-black text-slate-900">Step 3: Generate & Schedule</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">Upload your product photo (or import from URL), choose a scene environment, and generate a stunning AI pin. Then schedule it directly to Pinterest.</p>
-                <p className="text-xs text-slate-400">You have <strong className="text-rose-600">2 free images</strong> to start. No credit card required.</p>
-              </>}
-              <div className="flex gap-3">
-                <button onClick={()=>{setTourStep(0);setHasSeenTour(true);localStorage.setItem("_pv_tour_v2","1");}} className="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-2xl text-sm hover:bg-slate-200">Skip</button>
-                <button onClick={()=>{if(tourStep<3){setTourStep(t=>t+1);}else{setTourStep(0);setHasSeenTour(true);localStorage.setItem("_pv_tour_v2","1");}}}
-                  className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2">
-                  {tourStep===3?"Let's Start 🚀":"Next →"}
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      )}</AnimatePresence>
-
-      {/* -- Legal Pages (full-screen overlay) -- */}
-      <AnimatePresence>{(showTermsPage||showPrivacyPage||showRefundPage)&&(
-        <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}
-          className="fixed inset-0 z-[250] bg-white overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-6 py-12">
-            <button onClick={()=>{setShowTermsPage(false);setShowPrivacyPage(false);setShowRefundPage(false);}}
-              className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold mb-8 transition-colors">
-              <ArrowLeft size={16}/>Back to PinViral
-            </button>
-            {showTermsPage&&(
-              <div className="prose prose-slate max-w-none space-y-6">
-                <h1 className="text-3xl font-black text-slate-900">Terms of Service</h1>
-                <p className="text-slate-400 text-sm">Last updated: January 2026</p>
-                {[
-                  ["1. Acceptance","By using PinViral, you agree to these Terms. If you disagree, do not use the service."],
-                  ["2. Acceptable Use","You may use PinViral only for lawful purposes. You may not use it to create content that infringes intellectual property, violates platform rules, or harasses others."],
-                  ["3. Content Ownership","You retain all rights to your product images. PinViral retains rights to the AI-generated outputs created using our models and infrastructure. You are granted a perpetual license to use generated images for your commercial purposes."],
-                  ["4. Image Rights & DMCA","By uploading an image you attest that you own or have rights to use it. We comply with DMCA takedown requests. Repeat infringers will be permanently banned. Send takedown notices to: dmca@pinviral.ai"],
-                  ["5. AI Processing Disclosure","Product images you upload are processed by Google Gemini API (a subprocessor). By using PinViral you consent to this processing. Review Google's data processing terms at cloud.google.com/terms/data-processing-addendum."],
-                  ["6. Subscription & Billing","Subscriptions renew automatically. You may cancel at any time from your account settings. Cancellation takes effect at the end of the current billing period."],
-                  ["7. Refund Policy","See our Refund Policy for details on the 14-day money-back guarantee."],
-                  ["8. Limitation of Liability","PinViral's liability is limited to the amount you paid in the 3 months preceding a claim. We are not liable for indirect, incidental, or consequential damages. AI-generated content may occasionally produce unexpected outputs; review before publishing."],
-                  ["9. Governing Law","These terms are governed by the laws of Malaysia. Disputes shall be resolved by arbitration."],
-                  ["10. Changes","We may update these terms with 30 days notice via email or in-app notification."],
-                ].map(([title,body])=>(
-                  <div key={title as string} className="space-y-2">
-                    <h2 className="text-lg font-black text-slate-900">{title}</h2>
-                    <p className="text-slate-600 leading-relaxed">{body}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {showPrivacyPage&&(
-              <div className="space-y-6">
-                <h1 className="text-3xl font-black text-slate-900">Privacy Policy</h1>
-                <p className="text-slate-400 text-sm">Last updated: January 2026 · Compliant with GDPR & CCPA</p>
-                {[
-                  ["Data We Collect","Email address (on subscription); product images you upload; browser fingerprint (canvas hash, audio fingerprint, device properties); usage data (images generated, plans purchased); Stripe payment data (processed by Stripe · we never see card numbers)."],
-                  ["How We Use It","To provide and improve PinViral; to enforce free-plan limits (fingerprinting); to process payments; to send transactional emails (receipts, plan changes)."],
-                  ["Browser Fingerprinting","We collect a browser fingerprint to enforce the 1-device free trial policy. This fingerprint is stored in your browser (localStorage and IndexedDB). It is not shared with third parties."],
-                  ["Subprocessors","Google Gemini API (image processing) · covered by Google's DPA at cloud.google.com/terms/data-processing-addendum. Stripe (payments). corsproxy.io / allorigins.win (URL image fetching · no personal data)."],
-                  ["Data Retention","Session data is stored locally in your browser. We do not maintain a cloud database of user data unless you have an active subscription."],
-                  ["Your Rights (GDPR/CCPA)","Right to access, correct, delete, and export your data. Use 'Export Data' in Account Settings. To delete your account and all associated data email privacy@pinviral.ai."],
-                  ["Cookies","We use localStorage and IndexedDB · no third-party tracking cookies. See our Cookie Consent banner for details."],
-                  ["Contact","privacy@pinviral.ai"],
-                ].map(([title,body])=>(
-                  <div key={title as string} className="space-y-2">
-                    <h2 className="text-lg font-black text-slate-900">{title}</h2>
-                    <p className="text-slate-600 leading-relaxed">{body}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-            {showRefundPage&&(
-              <div className="space-y-6">
-                <h1 className="text-3xl font-black text-slate-900">Refund Policy</h1>
-                <p className="text-slate-400 text-sm">Last updated: January 2026</p>
-                {[
-                  ["14-Day Money-Back Guarantee","If you're not satisfied with PinViral within 14 days of your first paid subscription, contact us at refunds@pinviral.ai for a full refund. No questions asked."],
-                  ["After 14 Days","We do not offer refunds after the 14-day window except where required by law (e.g. EU consumer rights). Partial-month refunds are not provided."],
-                  ["Top-up Packs","Image and video top-up packs are non-refundable once credits have been used. Unused credits may be refunded within 14 days of purchase."],
-                  ["Chargebacks","Filing a chargeback without first contacting us will result in permanent account suspension. We respond to all refund requests within 2 business days."],
-                  ["How to Request","Email refunds@pinviral.ai with your account email and order ID. We process refunds within 5-10 business days via your original payment method."],
-                ].map(([title,body])=>(
-                  <div key={title as string} className="space-y-2">
-                    <h2 className="text-lg font-black text-slate-900">{title}</h2>
-                    <p className="text-slate-600 leading-relaxed">{body}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}</AnimatePresence>
-
-      
-
-      {/* -- Animation overlay with progress */}
-      <AnimatePresence>{(isAnimating||isExtending)&&(
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-white/85 backdrop-blur-md">
-          <div className="text-center space-y-6 max-w-xs w-full px-6">
-            <div className="relative w-20 h-20 mx-auto">
-              <div className="absolute inset-0 border-4 border-rose-100 rounded-full"/>
-              <div className="absolute inset-0 border-4 border-rose-600 rounded-full border-t-transparent animate-spin"/>
-              <div className="absolute inset-0 flex items-center justify-center text-rose-600"><Wand2 size={28} className="animate-pulse"/></div>
-            </div>
-            <div className="space-y-1">
-              <h4 className="text-lg font-black text-slate-900">{isExtending?"Extending Video...":"Creating Your Video Pin..."}</h4>
-              <p className="text-sm text-slate-500 font-medium min-h-[20px]">{videoProgressStep||"Warming up AI..."}</p>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                <span>Progress</span><span>{videoProgress}%</span>
-              </div>
-              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-rose-500 to-violet-500 rounded-full transition-all duration-[2s] ease-out" style={{width:`${videoProgress}%`}}/>
-              </div>
-              <p className="text-[10px] text-slate-400">Typical: 60-90 seconds · Please don't close this tab</p>
-            </div>
-          </div>
-        </div>
-      )}</AnimatePresence>
+        )}
+      </AnimatePresence>
     </div>
+  );
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
+  return (
+    <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
+      {imageUrl ? (
+        <>
+          <img src={imageUrl} alt="Uploaded product" className="w-full h-full object-cover"/>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+            <RefreshCw size={28} className="mb-2"/>
+            <p className="text-xs font-black uppercase tracking-widest">Change Image</p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-4 text-slate-300 group-hover:text-rose-500 group-hover:scale-110 transition-all"><Upload size={32} className="stroke-[2]"/></div>
+          <p className="text-lg font-black text-slate-900 tracking-tight mb-1">Source Visual</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload your product photo</p>
+        </>
+      )}
+      <input type="file" className="hidden" accept="image/*" onChange={onImageUpload}/>
+    </label>
   );
 }
 
@@ -3024,10 +1013,29 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-export default function App(){
-  return(
-    <ErrorBoundary>
-      <AppInner/>
-    </ErrorBoundary>
+function PricingCard({ tier, price, description, features, cta, isPopular = false, emoji }: {
+  tier: string; price: string; description: string; features: string[]; cta: string; isPopular?: boolean; emoji: string;
+}) {
+  return (
+    <div className={cn("relative bg-white p-8 rounded-[32px] border transition-all flex flex-col h-full",
+      isPopular ? "border-rose-200 shadow-xl shadow-rose-100 scale-105 z-10" : "border-slate-200 shadow-sm hover:shadow-md")}>
+      {isPopular && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Most Popular</div>}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-1"><span className="text-xl">{emoji}</span><h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight">{tier}</h3></div>
+        <div className="flex items-baseline gap-1 mb-2"><span className="text-4xl font-black text-slate-900">{price}</span><span className="text-slate-400 text-sm font-medium">/ mo</span></div>
+        <p className="text-slate-500 text-sm leading-relaxed">{description}</p>
+      </div>
+      <ul className="space-y-3 mb-8 flex-grow">
+        {features.map((f, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm text-slate-600 font-medium">
+            <Check size={16} className="text-emerald-500 shrink-0 mt-0.5"/><span>{f}</span>
+          </li>
+        ))}
+      </ul>
+      <button className={cn("w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2",
+        isPopular ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-200" : "bg-slate-900 hover:bg-slate-800 text-white")}>
+        {cta} <ArrowRight size={18}/>
+      </button>
+    </div>
   );
 }
