@@ -1060,8 +1060,8 @@ function PricingCard({ tier, price, generations, description, features, isPopula
   const [loading, setLoading] = useState(false);
   
   const PRICE_IDS: Record<string, string> = {
-    starter: "price_1TXCKzPdc39g7hCsNmqMFawN",
-    pro: "price_1TXCLRPdc39g7hCsXMszkCsH",
+    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
+    pro: "price_1TXDk3B7i0tTYaLUBr36BDko",
   };
 
   async function handleBuy() {
@@ -1163,5 +1163,3 @@ function PricingCard({ tier, price, generations, description, features, isPopula
     </div>
   );
 }
-
-
