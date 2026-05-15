@@ -53,7 +53,6 @@ export default async function handler(req, res) {
         billing:            "one-time",
         stripe_customer_id: session.customer || email,
         activated_at:       now,
-        topup_history:      [],
         updated_at:         now,
       },
       { onConflict: "email" }
