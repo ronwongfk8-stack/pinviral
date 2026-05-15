@@ -148,14 +148,20 @@ export default function App() {
     }
   }, []);
 
-  const loadUserFromSupabase = async (email: string) => {
+  const loadUserFromSupabase = async (email: string, retries = 0): Promise<void> => {
     setIsLoadingUser(true);
     try {
       const res = await fetch(`/api/get-user?email=${encodeURIComponent(email)}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (retries < 6) setTimeout(() => loadUserFromSupabase(email, retries + 1), 2000);
+        return;
+      }
       const data = await res.json();
       const user = data.user;
-      if (!user) return;
+      if (!user) {
+        if (retries < 6) setTimeout(() => loadUserFromSupabase(email, retries + 1), 2000);
+        return;
+      }
       localStorage.setItem("pinviral_email", email);
       setUserEmail(email);
       setUserTier(user.plan as any);
@@ -406,9 +412,13 @@ No generic CTAs. Focus on social proof and value proposition.` });
         {paymentSuccess && (
           <motion.div initial={{ opacity: 0, y: -40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -40 }}
             className="fixed top-0 left-0 right-0 z-[200] bg-emerald-500 text-white px-4 py-3 flex items-center justify-center gap-3 shadow-lg">
-            <Check size={18} className="shrink-0"/>
+            {isLoadingUser
+              ? <Loader2 size={18} className="shrink-0 animate-spin"/>
+              : <Check size={18} className="shrink-0"/>}
             <span className="font-black text-sm">
-              🎉 Payment successful! Welcome to <span className="uppercase">{TIER_NAMES[userTier]}</span> — {TIER_LIMITS[userTier]} generations activated for <span className="underline">{userEmail}</span>
+              {isLoadingUser
+                ? `⏳ Payment received! Activating your plan for ${userEmail}...`
+                : `🎉 Activated! Welcome to ${TIER_NAMES[userTier]} — ${TIER_LIMITS[userTier]} generations ready for ${userEmail}`}
             </span>
             <button onClick={() => setPaymentSuccess(false)} className="ml-4 text-white/80 hover:text-white text-lg leading-none">×</button>
           </motion.div>
