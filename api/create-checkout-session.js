@@ -1,4 +1,4 @@
-const SK = process.env.STRIPE_SECRET_KEY;
+const SK = process.env.VITE_STRIPE_SECRET_KEY;
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
