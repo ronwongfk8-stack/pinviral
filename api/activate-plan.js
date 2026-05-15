@@ -1,5 +1,5 @@
-const Stripe = require("stripe");
-const { createClient } = require("@supabase/supabase-js");
+import Stripe from "stripe";
+import { createClient } from "@supabase/supabase-js";
 
 const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY);
 const supabase = createClient(
@@ -12,16 +12,15 @@ const PLAN_CONFIG = {
   price_1TXDk3B7i0tTYaLUBr36BDko: { plan: "pro",     generations: 200 },
 };
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
 
   console.log("[activate] sessionId:", sessionId);
-  console.log("[activate] STRIPE_KEY exists:", !!process.env.VITE_STRIPE_SECRET_KEY);
-  console.log("[activate] SUPABASE_URL exists:", !!process.env.VITE_SUPABASE_URL);
-  console.log("[activate] SERVICE_ROLE exists:", !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+  console.log("[activate] stripe key starts with:", process.env.VITE_STRIPE_SECRET_KEY?.slice(0,7));
+  console.log("[activate] supabase url:", process.env.VITE_SUPABASE_URL?.slice(0,20));
 
   try {
     const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -69,7 +68,7 @@ module.exports = async function handler(req, res) {
     res.status(200).json({ success: true, email, plan: plan.plan, generations: plan.generations });
 
   } catch (err) {
-    console.error("[activate] CATCH error:", err.message, err.stack);
+    console.error("[activate] CATCH:", err.message);
     res.status(500).json({ error: err.message });
   }
-};
+}
