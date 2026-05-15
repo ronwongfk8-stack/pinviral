@@ -126,35 +126,7 @@ export default function App() {
   const previewRef = useRef<HTMLDivElement>(null);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
-  // ── Load user from Supabase on mount (handles post-payment redirect) ─────────
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const payment   = params.get("payment");
-    const email     = params.get("email");
-    const sessionId = params.get("session_id");
-
-    if (payment === "success" && email) {
-      setPaymentSuccess(true);
-      setUserEmail(email);
-      localStorage.setItem("pinviral_email", email);
-      // Clean URL
-      window.history.replaceState({}, "", "/");
-      // Activate plan directly via session ID (no webhook dependency)
-      if (sessionId) {
-        activatePlan(sessionId, email);
-      } else {
-        loadUserFromSupabase(email);
-      }
-    } else {
-      // Check localStorage for returning user
-      const saved = localStorage.getItem("pinviral_email");
-      if (saved) {
-        setUserEmail(saved);
-        loadUserFromSupabase(saved);
-      }
-    }
-  }, []);
-
+  // ── Activate plan directly via Stripe session ID ─────────────────────────────
   const activatePlan = async (sessionId: string, email: string) => {
     setIsLoadingUser(true);
     try {
@@ -164,20 +136,48 @@ export default function App() {
         body: JSON.stringify({ sessionId }),
       });
       const data = await res.json();
+      console.log("[activatePlan] response:", JSON.stringify(data));
       if (!res.ok) throw new Error(data.error);
-      // Successfully activated — update UI
       setUserTier(data.plan as any);
       setGenerationsUsed(0);
       setUserEmail(email);
       localStorage.setItem("pinviral_email", email);
     } catch (err: any) {
-      console.error("[activate]", err.message);
-      // Fallback: try loading from Supabase
+      console.error("[activatePlan] error:", err.message);
       loadUserFromSupabase(email);
     } finally {
       setIsLoadingUser(false);
     }
   };
+
+  // ── Load user from Supabase on mount (handles post-payment redirect) ─────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment   = params.get("payment");
+    const email     = params.get("email");
+    const sessionId = params.get("session_id");
+
+    console.log("[mount] payment:", payment, "email:", email, "sessionId:", sessionId);
+
+    if (payment === "success" && email) {
+      setPaymentSuccess(true);
+      setUserEmail(email);
+      localStorage.setItem("pinviral_email", email);
+      window.history.replaceState({}, "", "/");
+      if (sessionId) {
+        activatePlan(sessionId, email);
+      } else {
+        console.warn("[mount] No session_id in URL — falling back to Supabase");
+        loadUserFromSupabase(email);
+      }
+    } else {
+      const saved = localStorage.getItem("pinviral_email");
+      if (saved) {
+        setUserEmail(saved);
+        loadUserFromSupabase(saved);
+      }
+    }
+  }, []);
 
   const loadUserFromSupabase = async (email: string, retries = 0): Promise<void> => {
     setIsLoadingUser(true);
