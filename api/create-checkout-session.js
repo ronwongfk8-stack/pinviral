@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       "line_items[0][price]": priceId,
       "line_items[0][quantity]": "1",
       mode: "payment",
-      success_url: `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}`,
+      success_url: `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${req.headers.origin}/?payment=cancelled`,
       "metadata[userId]": userId || "anonymous",
       "metadata[priceId]": priceId,

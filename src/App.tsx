@@ -129,15 +129,22 @@ export default function App() {
   // ── Load user from Supabase on mount (handles post-payment redirect) ─────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const payment = params.get("payment");
-    const email   = params.get("email");
+    const payment   = params.get("payment");
+    const email     = params.get("email");
+    const sessionId = params.get("session_id");
 
     if (payment === "success" && email) {
       setPaymentSuccess(true);
       setUserEmail(email);
-      loadUserFromSupabase(email);
+      localStorage.setItem("pinviral_email", email);
       // Clean URL
       window.history.replaceState({}, "", "/");
+      // Activate plan directly via session ID (no webhook dependency)
+      if (sessionId) {
+        activatePlan(sessionId, email);
+      } else {
+        loadUserFromSupabase(email);
+      }
     } else {
       // Check localStorage for returning user
       const saved = localStorage.getItem("pinviral_email");
@@ -147,6 +154,30 @@ export default function App() {
       }
     }
   }, []);
+
+  const activatePlan = async (sessionId: string, email: string) => {
+    setIsLoadingUser(true);
+    try {
+      const res = await fetch("/api/activate-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      // Successfully activated — update UI
+      setUserTier(data.plan as any);
+      setGenerationsUsed(0);
+      setUserEmail(email);
+      localStorage.setItem("pinviral_email", email);
+    } catch (err: any) {
+      console.error("[activate]", err.message);
+      // Fallback: try loading from Supabase
+      loadUserFromSupabase(email);
+    } finally {
+      setIsLoadingUser(false);
+    }
+  };
 
   const loadUserFromSupabase = async (email: string, retries = 0): Promise<void> => {
     setIsLoadingUser(true);
