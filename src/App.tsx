@@ -85,7 +85,7 @@ export default function App() {
   const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
   const [isMockMode, setIsMockMode]                   = useState(true);
   const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
-  const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
+  const [strategy, setStrategy]                       = useState<<PinStrategy | null>(null);
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
   const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging]                   = useState(false);
@@ -96,17 +96,18 @@ export default function App() {
   const [generatedImage, setGeneratedImage]           = useState<string | null>(null);
   const [copiedField, setCopiedField]                 = useState<string | null>(null);
   const [error, setError]                             = useState<string | null>(null);
-  const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
-  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
+  const [cloningMode, setCloningMode]               = useState<<"direct"|"stylized"|"reimagine"|"variation">("direct");
+  const [aspectRatio, setAspectRatio]               = useState<<"9:16"|"2:3">("9:16");
   const [overlayScale, setOverlayScale]             = useState(1);
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
   const [productUrl, setProductUrl]                 = useState("");
+  const [customVisualPrompt, setCustomVisualPrompt] = useState("");
 
   // ── NEW: User state and generation tracking ─────────────────────────────────
   const [userName, setUserName]                       = useState("");
   const [userEmail, setUserEmail]                     = useState("");
-  const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
+  const [userTier, setUserTier]                       = useState<<"free" | "starter" | "pro" | "scale">("free");
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
@@ -115,7 +116,7 @@ export default function App() {
 
   const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
 
-  const previewRef = useRef<HTMLDivElement>(null);
+  const previewRef = useRef<<HTMLDivElement>(null);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // Auto-fetch social proof when URL is entered
@@ -277,7 +278,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
     finally { setIsAnalyzingImage(false); }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -876,23 +877,78 @@ No generic CTAs. Focus on social proof and value proposition.` });
           </motion.div>
         )}
 
-        {/* Pricing */}
-        <section id="pricing-section" className="py-24 border-t border-slate-100">
-          <div className="max-w-6xl mx-auto px-4">
+        {/* ── PRICING SECTION ─────────────────────────────────────────────── */}
+        <section id="pricing-section" className="py-24 bg-slate-50 border-t border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Section Header */}
             <div className="text-center max-w-3xl mx-auto mb-16">
-              <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
-                Turn Products Into Viral Content — <span className="text-rose-600">Without Designers or Guesswork</span>
+              <p className="text-rose-600 font-black uppercase tracking-[0.3em] text-xs mb-4">Pricing</p>
+              <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+                Simple, Transparent Pricing
               </h2>
-              <p className="text-lg text-slate-600 mb-2">Create high-converting Pinterest visuals in seconds.</p>
-              <p className="text-sm font-bold text-rose-500 uppercase tracking-widest">Only pay for what you actually use.</p>
+              <p className="text-lg text-slate-500 mb-2">
+                Pay once, generate forever. No subscriptions, no hidden fees.
+              </p>
+              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold mt-4">
+                <Check size={16} />
+                One-time purchase — credits never expire
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-              <PricingCard tier="Free Trial" price="$0" generations="3" description="Perfect for testing"
-                features={["3 AI generations","5 viral angles","SEO descriptions","Hashtag suggestions"]} cta="Start Free" tierKey="free" currentTier={userTier} onSelect={setUserTier}/>
-              <PricingCard tier="Starter" price="$24" generations="50" description="For beginners"
-                features={["50 AI generations","All strategy features","Image generation","Social proof detection"]} cta="Get Starter" tierKey="starter" currentTier={userTier} onSelect={setUserTier}/>
-              <PricingCard tier="Pro" price="$49" generations="200" description="For power sellers" isPopular
-                features={["200 AI generations","Everything in Starter","Priority processing","Advanced cloning modes"]} cta="Go Pro" tierKey="pro" currentTier={userTier} onSelect={setUserTier}/>
+
+            {/* Pricing Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-stretch">
+              <PricingCard 
+                tier="Free Trial" 
+                price="$0" 
+                generations="3 generations"
+                description="Perfect for testing the platform"
+                features={[
+                  "3 AI generations",
+                  "5 viral angles per product",
+                  "SEO descriptions & hashtags",
+                  "Basic image export",
+                  "Community support"
+                ]} 
+                tierKey="free" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+              />
+              <PricingCard 
+                tier="Starter" 
+                price="$24" 
+                generations="50 generations"
+                description="For creators getting started"
+                features={[
+                  "50 AI generations",
+                  "All viral strategy features",
+                  "AI image generation",
+                  "Social proof detection",
+                  "HD image export",
+                  "Email support"
+                ]} 
+                tierKey="starter" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+              />
+              <PricingCard 
+                tier="Pro" 
+                price="$49" 
+                generations="200 generations"
+                description="For power sellers & agencies"
+                features={[
+                  "200 AI generations",
+                  "Everything in Starter",
+                  "Priority processing",
+                  "Advanced cloning modes",
+                  "4K image export",
+                  "Priority support",
+                  "Video storyboard generation"
+                ]} 
+                isPopular
+                tierKey="pro" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+              />
             </div>
           </div>
         </section>
@@ -932,8 +988,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
               <div className="space-y-3 mb-8">
                 {[
-                  { key: "starter" as const, name: "Starter", price: "$24/mo", gens: "50 generations", desc: "Best for beginners" },
-                  { key: "pro" as const, name: "Pro", price: "$49/mo", gens: "200 generations", desc: "Best for power sellers" },
+                  { key: "starter" as const, name: "Starter", price: "$24", gens: "50 generations", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$49", gens: "200 generations", desc: "Best for power sellers" },
                 ].map(plan => (
                   <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
@@ -967,7 +1023,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
-function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
+function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<<HTMLInputElement>) => void; imageUrl: string | null }) {
   return (
     <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
       {imageUrl ? (
@@ -1000,11 +1056,11 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect }) {
+function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect }: any) {
   const [loading, setLoading] = useState(false);
   
-  const PRICE_IDS = {
-    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy", // Replace with actual Stripe price ID after running setup-stripe
+  const PRICE_IDS: Record<string, string> = {
+    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
     pro: "price_1TXDk3B7i0tTYaLUBr36BDko",
   };
 
@@ -1021,16 +1077,21 @@ function PricingCard({ tier, price, generations, description, features, isPopula
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           priceId: PRICE_IDS[tierKey],
-          userId: 'anonymous' // Replace with actual user ID if you have auth
+          userId: 'anonymous'
         }),
       });
       
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(`Server error: ${res.status} - ${text.slice(0, 100)}`);
+      }
       
-      // Redirect to Stripe Checkout
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      
       window.location.href = data.url;
-    } catch (err) {
+    } catch (err: any) {
       alert('Payment failed: ' + err.message);
     } finally {
       setLoading(false);
@@ -1041,43 +1102,63 @@ function PricingCard({ tier, price, generations, description, features, isPopula
   const isFree = tierKey === "free";
 
   return (
-    <div className={`relative rounded-2xl border-2 p-6 flex flex-col gap-4 ${isPopular ? "border-rose-500 shadow-lg shadow-rose-100" : "border-slate-200"} ${isCurrent ? "ring-2 ring-emerald-400" : ""}`}>
+    <div className={`relative rounded-3xl border-2 p-8 flex flex-col gap-6 min-h-[580px] w-full transition-all duration-300 hover:scale-[1.02] ${
+      isPopular 
+        ? "border-rose-500 shadow-2xl shadow-rose-200/50 bg-white md:-mt-4 md:mb-4" 
+        : "border-slate-200 shadow-xl shadow-slate-200/50 bg-white"
+    } ${isCurrent ? "ring-4 ring-emerald-400 ring-offset-2" : ""}`}>
+      
       {isPopular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[10px] font-bold px-3 py-1 rounded-full">
-          MOST POPULAR
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-rose-500 to-rose-600 text-white text-xs font-bold px-6 py-2.5 rounded-full shadow-lg uppercase tracking-wider">
+          Most Popular
         </div>
       )}
       
-      <div>
-        <h3 className="text-sm font-bold text-slate-800">{tier}</h3>
-        <p className="text-[11px] font-black text-rose-500 mt-1">{price}</p>
-        <p className="text-[10px] text-slate-500 mt-1">{description}</p>
+      {/* Header */}
+      <div className="text-center pt-2">
+        <h3 className={`text-2xl font-black ${isPopular ? "text-rose-600" : "text-slate-800"}`}>
+          {tier}
+        </h3>
+        <p className="text-sm text-slate-500 mt-2 font-medium">{description}</p>
       </div>
       
-      <div className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-        {generations}
+      {/* Price */}
+      <div className="text-center py-6 border-y border-slate-100">
+        <div className="flex items-baseline justify-center gap-1">
+          <span className="text-5xl font-black text-slate-900">{price}</span>
+          {!isFree && <span className="text-sm text-slate-400 font-medium">one-time</span>}
+        </div>
+        <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold">
+          <Zap size={16} />
+          {generations}
+        </div>
       </div>
       
-      <ul className="flex flex-col gap-2">
-        {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-2 text-[11px] text-slate-600">
-            <Check size={12} className="text-emerald-500" /> {f}
+      {/* Features */}
+      <ul className="flex flex-col gap-3 flex-1">
+        {features.map((f: string, i: number) => (
+          <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+            <Check size={18} className={`mt-0.5 shrink-0 ${isPopular ? "text-rose-500" : "text-emerald-500"}`} />
+            <span className="font-medium">{f}</span>
           </li>
         ))}
       </ul>
       
+      {/* CTA Button */}
       <button
         onClick={handleBuy}
         disabled={loading || isCurrent}
-        className={`w-full py-2.5 rounded-xl text-[11px] font-bold transition-all ${
+        className={`w-full py-4 rounded-xl text-sm font-bold transition-all duration-200 ${
           isCurrent 
             ? "bg-emerald-100 text-emerald-700 cursor-default"
             : isFree
-            ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            : "bg-rose-500 text-white hover:bg-rose-600"
+            ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-2 border-slate-300"
+            : isPopular
+            ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700 shadow-lg shadow-rose-200"
+            : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
         }`}
       >
-        {loading ? "Loading..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
+        {loading ? "Processing..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
       </button>
     </div>
   );
