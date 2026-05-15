@@ -1000,41 +1000,84 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, generations, description, features, cta, isPopular = false, tierKey, currentTier, onSelect }: {
-  tier: string; price: string; generations: string; description: string; features: string[]; cta: string;
-  isPopular?: boolean; tierKey: string; currentTier: string; onSelect: (tier: "free" | "starter" | "pro" | "scale") => void;
-}) {
+function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect }) {
+  const [loading, setLoading] = useState(false);
+  
+  const PRICE_IDS = {
+    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy", // Replace with actual Stripe price ID after running setup-stripe
+    pro: "price_1TXDk3B7i0tTYaLUBr36BDko",
+  };
+
+  async function handleBuy() {
+    if (tierKey === "free") {
+      onSelect("free");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          priceId: PRICE_IDS[tierKey],
+          userId: 'anonymous' // Replace with actual user ID if you have auth
+        }),
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
+      // Redirect to Stripe Checkout
+      window.location.href = data.url;
+    } catch (err) {
+      alert('Payment failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const isCurrent = currentTier === tierKey;
+  const isFree = tierKey === "free";
+
   return (
-    <div className={cn("relative bg-white p-6 rounded-[32px] border transition-all flex flex-col h-full",
-      isPopular ? "border-rose-200 shadow-xl shadow-rose-100 scale-105 z-10" : "border-slate-200 shadow-sm hover:shadow-md",
-      isCurrent ? "ring-2 ring-emerald-400" : "")}>
-      {isPopular && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Most Popular</div>}
-      {isCurrent && <div className="absolute -top-4 right-4 bg-emerald-500 text-white text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-widest">Active</div>}
-      <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight">{tier}</h3>
+    <div className={`relative rounded-2xl border-2 p-6 flex flex-col gap-4 ${isPopular ? "border-rose-500 shadow-lg shadow-rose-100" : "border-slate-200"} ${isCurrent ? "ring-2 ring-emerald-400" : ""}`}>
+      {isPopular && (
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-[10px] font-bold px-3 py-1 rounded-full">
+          MOST POPULAR
         </div>
-        <div className="flex items-baseline gap-1 mb-1">
-          <span className="text-4xl font-black text-slate-900">{price}</span>
-          {price !== "Custom" && <span className="text-slate-400 text-sm font-medium">/ mo</span>}
-        </div>
-        <p className="text-[11px] font-black text-rose-600 mb-2">{generations} generations</p>
-        <p className="text-slate-500 text-sm leading-relaxed">{description}</p>
+      )}
+      
+      <div>
+        <h3 className="text-sm font-bold text-slate-800">{tier}</h3>
+        <p className="text-[11px] font-black text-rose-500 mt-1">{price}</p>
+        <p className="text-[10px] text-slate-500 mt-1">{description}</p>
       </div>
-      <ul className="space-y-3 mb-8 flex-grow">
+      
+      <div className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
+        {generations}
+      </div>
+      
+      <ul className="flex flex-col gap-2">
         {features.map((f, i) => (
-          <li key={i} className="flex items-start gap-2 text-sm text-slate-600 font-medium">
-            <Check size={16} className="text-emerald-500 shrink-0 mt-0.5"/><span>{f}</span>
+          <li key={i} className="flex items-center gap-2 text-[11px] text-slate-600">
+            <Check size={12} className="text-emerald-500" /> {f}
           </li>
         ))}
       </ul>
-      <button onClick={() => onSelect(tierKey as "free" | "starter" | "pro" | "scale")}
-        className={cn("w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2",
-          isCurrent
-            ? "bg-emerald-500 hover:bg-emerald-600 text-white"
-            : isPopular ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-200" : "bg-slate-900 hover:bg-slate-800 text-white")}>
-        {isCurrent ? "Current Plan" : cta} <ArrowRight size={18}/>
+      
+      <button
+        onClick={handleBuy}
+        disabled={loading || isCurrent}
+        className={`w-full py-2.5 rounded-xl text-[11px] font-bold transition-all ${
+          isCurrent 
+            ? "bg-emerald-100 text-emerald-700 cursor-default"
+            : isFree
+            ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            : "bg-rose-500 text-white hover:bg-rose-600"
+        }`}
+      >
+        {loading ? "Loading..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
       </button>
     </div>
   );
