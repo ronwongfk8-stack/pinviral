@@ -1,18 +1,22 @@
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY);
-
 export default async function handler(req, res) {
   const { sessionId } = req.query;
-  console.log("[debug] stripe key starts with:", process.env.VITE_STRIPE_SECRET_KEY?.slice(0,7));
+  const sk = process.env.VITE_STRIPE_SECRET_KEY;
+  console.log("[debug] sk prefix:", sk?.slice(0, 7));
+
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const stripeRes = await fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+      { headers: { Authorization: `Bearer ${sk}` } }
+    );
+    const session = await stripeRes.json();
     res.status(200).json({
+      stripe_status: stripeRes.status,
       payment_status: session.payment_status,
       email: session.customer_details?.email,
       metadata: session.metadata,
-      customer: session.customer,
+      error: session.error,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

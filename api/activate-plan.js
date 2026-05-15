@@ -1,7 +1,5 @@
-import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY);
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
@@ -18,15 +16,30 @@ export default async function handler(req, res) {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
 
+  const sk = process.env.VITE_STRIPE_SECRET_KEY;
+  console.log("[activate] sk prefix:", sk?.slice(0, 7));
   console.log("[activate] sessionId:", sessionId);
-  console.log("[activate] stripe key starts with:", process.env.VITE_STRIPE_SECRET_KEY?.slice(0,7));
-  console.log("[activate] supabase url:", process.env.VITE_SUPABASE_URL?.slice(0,20));
 
   try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    // Use fetch directly instead of Stripe SDK
+    const stripeRes = await fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${sk}`,
+        },
+      }
+    );
+
+    const session = await stripeRes.json();
+    console.log("[activate] stripe status:", stripeRes.status);
     console.log("[activate] payment_status:", session.payment_status);
     console.log("[activate] email:", session.customer_details?.email);
     console.log("[activate] metadata:", JSON.stringify(session.metadata));
+
+    if (!stripeRes.ok) {
+      return res.status(400).json({ error: session.error?.message || "Stripe error" });
+    }
 
     if (session.payment_status !== "paid") {
       return res.status(400).json({ error: "Payment not completed" });
