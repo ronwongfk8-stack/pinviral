@@ -85,7 +85,7 @@ export default function App() {
   const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
   const [isMockMode, setIsMockMode]                   = useState(true);
   const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
-  const [strategy, setStrategy]                       = useState<<PinStrategy | null>(null);
+  const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
   const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging]                   = useState(false);
@@ -96,8 +96,8 @@ export default function App() {
   const [generatedImage, setGeneratedImage]           = useState<string | null>(null);
   const [copiedField, setCopiedField]                 = useState<string | null>(null);
   const [error, setError]                             = useState<string | null>(null);
-  const [cloningMode, setCloningMode]               = useState<<"direct"|"stylized"|"reimagine"|"variation">("direct");
-  const [aspectRatio, setAspectRatio]               = useState<<"9:16"|"2:3">("9:16");
+  const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
+  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [overlayScale, setOverlayScale]             = useState(1);
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
@@ -107,7 +107,7 @@ export default function App() {
   // ── NEW: User state and generation tracking ─────────────────────────────────
   const [userName, setUserName]                       = useState("");
   const [userEmail, setUserEmail]                     = useState("");
-  const [userTier, setUserTier]                       = useState<<"free" | "starter" | "pro" | "scale">("free");
+  const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
@@ -116,7 +116,7 @@ export default function App() {
 
   const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
 
-  const previewRef = useRef<<HTMLDivElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // Auto-fetch social proof when URL is entered
@@ -278,7 +278,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
     finally { setIsAnalyzingImage(false); }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -1023,7 +1023,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
-function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<<HTMLInputElement>) => void; imageUrl: string | null }) {
+function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
   return (
     <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
       {imageUrl ? (
