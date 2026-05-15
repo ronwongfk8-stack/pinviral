@@ -9,17 +9,19 @@ export default async function handler(req, res) {
     const { priceId, userId, email } = req.body;
     if (!priceId) return res.status(400).json({ error: "priceId is required" });
 
-    const params = new URLSearchParams({
-      "payment_method_types[]": "card",
-      "line_items[0][price]": priceId,
-      "line_items[0][quantity]": "1",
-      mode: "payment",
-      success_url: `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${req.headers.origin}/?payment=cancelled`,
-      "metadata[userId]": userId || "anonymous",
-      "metadata[priceId]": priceId,
-      "metadata[email]": email || "",
-    });
+    const successUrl = `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl  = `${req.headers.origin}/?payment=cancelled`;
+
+    const params = new URLSearchParams();
+    params.append("payment_method_types[]", "card");
+    params.append("line_items[0][price]", priceId);
+    params.append("line_items[0][quantity]", "1");
+    params.append("mode", "payment");
+    params.append("success_url", successUrl);
+    params.append("cancel_url", cancelUrl);
+    params.append("metadata[userId]", userId || "anonymous");
+    params.append("metadata[priceId]", priceId);
+    params.append("metadata[email]", email || "");
 
     // Pre-fill email in Stripe checkout if provided
     if (email) {

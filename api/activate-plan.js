@@ -17,13 +17,16 @@ export default async function handler(req, res) {
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
 
   const sk = process.env.VITE_STRIPE_SECRET_KEY;
+  // Sanitize sessionId — remove any whitespace or extra chars
+  const cleanSessionId = sessionId.trim().replace(/[^a-zA-Z0-9_]/g, "");
   console.log("[activate] sk prefix:", sk?.slice(0, 7));
-  console.log("[activate] sessionId:", sessionId);
+  console.log("[activate] sessionId raw:", JSON.stringify(sessionId));
+  console.log("[activate] sessionId clean:", cleanSessionId);
 
   try {
     // Use fetch directly instead of Stripe SDK
     const stripeRes = await fetch(
-      `https://api.stripe.com/v1/checkout/sessions/${sessionId}`,
+      `https://api.stripe.com/v1/checkout/sessions/${cleanSessionId}`,
       {
         headers: {
           Authorization: `Bearer ${sk}`,
