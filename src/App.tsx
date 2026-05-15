@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * App 1 UI (PinMotionAI design) + Vercel backend API routing.
- * All AI calls go through /api/generate, /api/image, /api/video.
+ * All AI calls go through /api/generate, /api/image.
  * No direct Gemini SDK usage — the backend handles keys and model selection.
  */
 
@@ -11,9 +11,9 @@ import { useState, useEffect, useRef } from "react";
 import { toPng } from "html-to-image";
 import {
   Sparkles, Copy, Check, Image as ImageIcon, Loader2, ArrowRight,
-  Upload, Download, RefreshCw, Zap, Target, Search, Video,
-  ExternalLink, Wand2, Eye, AlertCircle, Star, Palette, Plus,
-  Hash, Accessibility,
+  Upload, Download, RefreshCw, Zap, Target, Search, ExternalLink,
+  Eye, AlertCircle, Star, Palette, Plus, Hash, Accessibility,
+  User, Mail, Crown
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -57,25 +57,14 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 1, delay = 2000):
   throw lastErr;
 }
 
-/** Convert base64 string → Blob for video playback */
-function b64ToBlob(b64: string, mime: string): Blob {
-  const bytes = atob(b64);
-  const arr   = new Uint8Array(bytes.length);
-  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-  return new Blob([arr], { type: mime });
-}
-
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface ViralAngle {
   title: string; seoTitle: string; hook: string; psychology: string;
   headlines: string[]; subtext: string[]; cta: string; pinDescription: string;
-  hashtags: string[]; altText: string; animationPrompt: string;
+  hashtags: string[]; altText: string;
   aiImagePrompt: string; videoPrompts: string[];
 }
 interface PinStrategy { angles: ViralAngle[]; }
-
-const BASE_REALISTIC_MOTION =
-  "Create subtle, realistic animation: slight camera zoom (Ken Burns effect), soft lighting movement, gentle shadow shift, no distortion of the product, keep product shape 100% accurate, simulate real product photography animation.";
 
 // ─── JSON extractor ────────────────────────────────────────────────────────────
 const extractAndParseJSON = (text: string): any => {
@@ -92,29 +81,21 @@ const extractAndParseJSON = (text: string): any => {
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [productName, setProductName]               = useState("");
-  const [isLoading, setIsLoading]                   = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage]   = useState(false);
-  const [isMockMode, setIsMockMode]                 = useState(true);
-  const [isEnhancingSEO, setIsEnhancingSEO]         = useState(false);
-  const [isAnimating, setIsAnimating]               = useState(false);
-  const [isExtending, setIsExtending]               = useState(false);
-  const [animatedVideoUrl, setAnimatedVideoUrl]     = useState<string | null>(null);
-  const [extensionPrompt, setExtensionPrompt]       = useState("");
-  const [customVisualPrompt, setCustomVisualPrompt] = useState("");
-  const [videoMimeType, setVideoMimeType]           = useState("video/mp4");
-  const [animationPrompt, setAnimationPrompt]       = useState("");
-  const [strategy, setStrategy]                     = useState<PinStrategy | null>(null);
+  const [isLoading, setIsLoading]                     = useState(false);
+  const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
+  const [isMockMode, setIsMockMode]                   = useState(true);
+  const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
+  const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
-  const [overlayPosition, setOverlayPosition]       = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging]                 = useState(false);
-  const [editableHeadline, setEditableHeadline]     = useState("");
-  const [editableSubtext, setEditableSubtext]       = useState("");
-  const [editableCTA, setEditableCTA]               = useState("");
-  const [uploadedImage, setUploadedImage]           = useState<string | null>(null);
-  const [generatedImage, setGeneratedImage]         = useState<string | null>(null);
-  const [copiedField, setCopiedField]               = useState<string | null>(null);
-  const [error, setError]                           = useState<string | null>(null);
-  const [creationsLeft, setCreationsLeft]           = useState(23);
+  const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging]                   = useState(false);
+  const [editableHeadline, setEditableHeadline]       = useState("");
+  const [editableSubtext, setEditableSubtext]         = useState("");
+  const [editableCTA, setEditableCTA]                 = useState("");
+  const [uploadedImage, setUploadedImage]             = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage]           = useState<string | null>(null);
+  const [copiedField, setCopiedField]                 = useState<string | null>(null);
+  const [error, setError]                             = useState<string | null>(null);
   const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
   const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [overlayScale, setOverlayScale]             = useState(1);
@@ -122,8 +103,20 @@ export default function App() {
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
   const [productUrl, setProductUrl]                 = useState("");
 
+  // ── NEW: User state and generation tracking ─────────────────────────────────
+  const [userName, setUserName]                       = useState("");
+  const [userEmail, setUserEmail]                     = useState("");
+  const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
+  const [generationsUsed, setGenerationsUsed]         = useState(0);
+  const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
+
+  const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
+  const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
+
+  const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
+
   const previewRef = useRef<HTMLDivElement>(null);
-  const CREATION_COSTS = { IMAGE: 1, ANIMATION: 5, EXTENSION: 5 };
+  const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // Auto-fetch social proof when URL is entered
   useEffect(() => {
@@ -140,14 +133,13 @@ export default function App() {
     setEditableHeadline(angle.headlines[0]);
     setEditableSubtext(angle.subtext[0]);
     setEditableCTA(angle.cta);
-    setAnimationPrompt(angle.animationPrompt);
   };
 
   const resetApp = () => {
     setProductName(""); setProductUrl(""); setStrategy(null); setSelectedAngleIndex(null);
-    setUploadedImage(null); setGeneratedImage(null); setAnimatedVideoUrl(null);
+    setUploadedImage(null); setGeneratedImage(null);
     setSocialProof(null); setEditableHeadline(""); setEditableSubtext("");
-    setEditableCTA(""); setCustomVisualPrompt(""); setAnimationPrompt(""); setError(null);
+    setEditableCTA(""); setCustomVisualPrompt(""); setError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -160,8 +152,13 @@ export default function App() {
   // ── Generate strategy ────────────────────────────────────────────────────────
   const generateStrategy = async () => {
     if (!productName.trim()) return;
+    if (generationsLeft < CREATION_COSTS.STRATEGY) {
+      setError(`No generations left. You have used ${generationsUsed}/${TIER_LIMITS[userTier]}. Upgrade to continue.`);
+      setShowUpgradeModal(true);
+      return;
+    }
     setIsLoading(true); setError(null);
-    setGeneratedImage(null); setAnimatedVideoUrl(null); setSocialProof(null); setCustomVisualPrompt("");
+    setGeneratedImage(null); setSocialProof(null); setCustomVisualPrompt("");
     try {
       const prompt = `You are a Pinterest viral growth expert + e-commerce strategist.
 Create 5 high-converting Pinterest pin strategies for: "${productName}".
@@ -180,23 +177,23 @@ For each angle provide:
 9. pinDescription (100+ word SEO-optimised paragraph with keywords)
 10. hashtags (exactly 10 relevant tags)
 11. altText (accessibility description of the pin image)
-12. animationPrompt (motion style description)
-13. videoPrompts (exactly 5 scene scripts for 15-30s video)
+12. videoPrompts (exactly 5 scene scripts for 15-30s video)
 
 NEGATIVE CONSTRAINTS: No generic phrases like "Shop for Trend", "Unlock Your Potential", "Elevate Your Style", "Buy Now".
 Return ONLY valid JSON, no markdown fences, no explanation:
-{"angles":[{"title":"","seoTitle":"","hook":"","psychology":"","aiImagePrompt":"","headlines":["","","","",""],"subtext":["","",""],"cta":"","pinDescription":"","hashtags":["","","","","","","","","",""],"altText":"","animationPrompt":"","videoPrompts":["","","","",""]}]}`;
+{"angles":[{"title":"","seoTitle":"","hook":"","psychology":"","aiImagePrompt":"","headlines":["","","","",""],"subtext":["","",""],"cta":"","pinDescription":"","hashtags":["","","","","","","","","",""],"altText":"","videoPrompts":["","","","",""]}]}`;
 
       const text = await withRetry(() => geminiRest(prompt, { jsonMode: true }));
       const data = extractAndParseJSON(text) as PinStrategy;
       if (!data.angles?.length) throw new Error("No angles returned. Please try again.");
       setStrategy(data);
       selectAngle(0, data.angles[0]);
+      setGenerationsUsed(p => p + CREATION_COSTS.STRATEGY);
     } catch (err: any) {
       const msg = err.message || "";
       setError(
         msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")
-          ? "⏳ Rate limit — please wait 15 seconds and try again."
+          ? "Rate limit -- please wait 15 seconds and try again."
           : msg || "Failed to generate strategy. Please try again."
       );
     } finally { setIsLoading(false); }
@@ -206,6 +203,12 @@ Return ONLY valid JSON, no markdown fences, no explanation:
   const generateImage = async (currentStrategy?: PinStrategy) => {
     const active = currentStrategy || strategy;
     if (!active || selectedAngleIndex === null) return;
+
+    if (generationsLeft < CREATION_COSTS.IMAGE) {
+      setError(`No generations left. You have used ${generationsUsed}/${TIER_LIMITS[userTier]}. Upgrade to continue.`);
+      setShowUpgradeModal(true);
+      return;
+    }
 
     // Mock / draft mode — zero cost preview
     if (isMockMode) {
@@ -218,7 +221,6 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       return;
     }
 
-    if (creationsLeft < CREATION_COSTS.IMAGE) { setError(`Only ${creationsLeft} credits left. Upgrade for more.`); return; }
     setIsGeneratingImage(true); setError(null);
     try {
       const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
@@ -243,7 +245,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       if (!data.imageB64) throw new Error("No image returned. Please try again.");
 
       setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
-      setCreationsLeft(p => p - CREATION_COSTS.IMAGE);
+      setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
     } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
   };
@@ -287,56 +289,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
     reader.readAsDataURL(file);
   };
 
-  // ── Animate → /api/video ─────────────────────────────────────────────────────
-  const animateImage = async () => {
-    const src = generatedImage || uploadedImage;
-    if (!src) return;
-    if (creationsLeft < CREATION_COSTS.ANIMATION) { setError(`Only ${creationsLeft} credits left. Upgrade for more.`); return; }
-    setIsAnimating(true); setError(null); setAnimatedVideoUrl(null);
-    try {
-      const b64  = src.split(",")[1];
-      const mime = src.split(";")[0].split(":")[1];
-      const prompt = `${BASE_REALISTIC_MOTION} ` +
-        (animationPrompt || `Animate this Pinterest pin: ${strategy?.angles[selectedAngleIndex ?? 0]?.psychology || productName}. Smooth aesthetic motion, lifestyle feel.`);
-
-      const res  = await fetch("/api/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageB64: b64, imageMime: mime, prompt }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Video generation failed");
-      if (!data.videoB64) throw new Error("No video returned. Please try again.");
-
-      const blob = b64ToBlob(data.videoB64, data.mimeType || "video/mp4");
-      setVideoMimeType(data.mimeType || "video/mp4");
-      setAnimatedVideoUrl(URL.createObjectURL(blob));
-      setCreationsLeft(p => p - CREATION_COSTS.ANIMATION);
-    } catch (err: any) { setError(err.message || "Failed to animate image. This can take a few minutes."); }
-    finally { setIsAnimating(false); }
-  };
-
-  // ── Extend animation (re-animate with new prompt) ────────────────────────────
-  const extendAnimation = async () => {
-    const src = generatedImage || uploadedImage;
-    if (!src) return;
-    if (creationsLeft < CREATION_COSTS.EXTENSION) { setError(`Only ${creationsLeft} credits left.`); return; }
-    setIsExtending(true); setError(null);
-    try {
-      const b64  = src.split(",")[1];
-      const mime = src.split(";")[0].split(":")[1];
-      const prompt = `${BASE_REALISTIC_MOTION} Continue the cinematic motion smoothly. ` +
-        (extensionPrompt || "Keep the product in focus and maintain realistic lighting.");
-
-      const res  = await fetch("/api/video", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageB64: b64, imageMime: mime, prompt }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Extension failed");
-      if (!data.videoB64) throw new Error("No video returned.");
-
-      const blob = b64ToBlob(data.videoB64, data.mimeType || "video/mp4");
-      setVideoMimeType(data.mimeType || "video/mp4");
-      setAnimatedVideoUrl(URL.createObjectURL(blob));
-      setCreationsLeft(p => p - CREATION_COSTS.EXTENSION);
-    } catch (err: any) { setError(err.message || "Failed to extend animation."); }
-    finally { setIsExtending(false); }
-  };
-
   // ── Enhance SEO description ──────────────────────────────────────────────────
   const enhanceSEO = async () => {
     if (!strategy || selectedAngleIndex === null) return;
@@ -365,13 +317,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
     } catch { setError("Download failed. Right-click the image and select 'Save Image As'."); }
   };
 
-  const downloadAnimation = () => {
-    if (!animatedVideoUrl) return;
-    const ext  = videoMimeType === "video/quicktime" ? "mov" : videoMimeType === "video/webm" ? "webm" : "mp4";
-    const link = Object.assign(document.createElement("a"), { href: animatedVideoUrl, download: `pinterest-pin-video-${productName.replace(/\s+/g,"-").toLowerCase()}.${ext}` });
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  };
-
   // ── Drag handlers for text overlay ──────────────────────────────────────────
   const handleDragStart = () => setIsDragging(true);
   const handleDragEnd   = () => setIsDragging(false);
@@ -398,20 +343,68 @@ No generic CTAs. Focus on social proof and value proposition.` });
             <h1 className="font-bold text-xl tracking-tight">PinViral</h1>
           </div>
           <div className="flex items-center gap-4">
+            {/* Generation counter badge */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl">
+              <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                {generationsUsed}/{TIER_LIMITS[userTier]} Used
+              </span>
+              <span className={cn("text-[10px] font-black px-1.5 py-0.5 rounded-md",
+                generationsLeft <= 3 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600")}>
+                {generationsLeft} Left
+              </span>
+            </div>
             {strategy && (
               <button onClick={resetApp} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-all">
                 <RefreshCw size={14}/> Next Product
               </button>
             )}
-            <button onClick={() => document.getElementById("pricing-section")?.scrollIntoView({ behavior: "smooth" })}
-              className="hidden sm:flex px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-lg shadow-rose-100 uppercase tracking-widest transition-all">
-              Plus Plan
+            <button onClick={() => setShowUpgradeModal(true)}
+              className="hidden sm:flex px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-black rounded-xl shadow-lg shadow-rose-100 uppercase tracking-widest transition-all items-center gap-2">
+              <Crown size={14}/> Upgrade
             </button>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
+
+        {/* ── User info bar (when no strategy yet) ─────────────────────────── */}
+        {!strategy && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+            className="max-w-4xl mx-auto mb-6">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-4">
+              <div className="flex items-center gap-3 flex-1 w-full">
+                <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600">
+                  <User size={18}/>
+                </div>
+                <div className="flex-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Your Name</label>
+                  <input type="text" placeholder="Enter your name"
+                    className="w-full text-sm font-bold text-slate-700 bg-transparent outline-none placeholder:text-slate-300"
+                    value={userName} onChange={e => setUserName(e.target.value)}/>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-slate-100 hidden sm:block"/>
+              <div className="flex items-center gap-3 flex-1 w-full">
+                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                  <Mail size={18}/>
+                </div>
+                <div className="flex-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Email</label>
+                  <input type="email" placeholder="Enter your email"
+                    className="w-full text-sm font-bold text-slate-700 bg-transparent outline-none placeholder:text-slate-300"
+                    value={userEmail} onChange={e => setUserEmail(e.target.value)}/>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-slate-100 hidden sm:block"/>
+              <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl shrink-0">
+                <Crown size={14} className="text-amber-500"/>
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{TIER_NAMES[userTier]}</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Input zone ─────────────────────────────────────────────────────── */}
         <section className={cn("transition-all duration-700 max-w-4xl mx-auto", strategy ? "mb-8 opacity-40 scale-95 pointer-events-none" : "mb-16")}>
@@ -448,12 +441,12 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                   {isAnalyzingImage && (
                     <p className="text-[10px] text-violet-500 font-bold ml-1 flex items-center gap-1 animate-pulse">
-                      <Loader2 size={9} className="animate-spin"/> Fetching social proof…
+                      <Loader2 size={9} className="animate-spin"/> Fetching social proof...
                     </p>
                   )}
                   {socialProof?.stars && (
                     <p className="text-[10px] text-emerald-600 font-bold ml-1 flex items-center gap-1">
-                      <Check size={9}/> Found: {socialProof.stars}★ · {socialProof.reviews}
+                      <Check size={9}/> Found: {socialProof.stars}* · {socialProof.reviews}
                     </p>
                   )}
                 </div>
@@ -461,6 +454,25 @@ No generic CTAs. Focus on social proof and value proposition.` });
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">3. Product Image</label>
                 <ImageUpload onImageUpload={handleImageUpload} imageUrl={uploadedImage}/>
+              </div>
+            </div>
+
+            {/* Generation usage label */}
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-2">
+                <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
+                <span className="text-[11px] font-bold text-slate-600">
+                  Generation Usage: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={cn("text-[10px] font-black px-2 py-1 rounded-lg",
+                  generationsLeft <= 3 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600")}>
+                  {generationsLeft} Left
+                </span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  {TIER_NAMES[userTier]}
+                </span>
               </div>
             </div>
 
@@ -489,6 +501,20 @@ No generic CTAs. Focus on social proof and value proposition.` });
             {/* Left panel */}
             <div className="lg:col-span-5 space-y-6">
               <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6 sticky top-24">
+
+                {/* Generation usage indicator in workspace */}
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
+                    <span className="text-[11px] font-bold text-slate-600">
+                      Used: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
+                    </span>
+                  </div>
+                  <button onClick={() => setShowUpgradeModal(true)}
+                    className="text-[10px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-widest flex items-center gap-1">
+                    <Crown size={12}/> Upgrade
+                  </button>
+                </div>
 
                 {/* Angle selector */}
                 <div className="space-y-4">
@@ -668,7 +694,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Palette size={10}/> Creative Mode</label>
                     <textarea value={customVisualPrompt} onChange={e => setCustomVisualPrompt(e.target.value)}
                       className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] text-slate-600 focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 outline-none transition-all h-20 resize-none font-medium"
-                      placeholder="Describe the environment (e.g. 'Marble tabletop', 'Minimalist white studio')…"/>
+                      placeholder="Describe the environment (e.g. 'Marble tabletop', 'Minimalist white studio')..."/>
                   </div>
 
                   <button onClick={() => generateImage()} disabled={isGeneratingImage}
@@ -677,7 +703,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     {isMockMode ? "Preview Visual (Draft)" : "Regenerate Visual Identity"}
                   </button>
                   <p className="text-[9px] text-slate-400 text-center font-bold italic">
-                    {isMockMode ? "Draft mode is free — toggle off to use real AI credits." : "Visual regeneration uses AI image credits."}
+                    {isMockMode ? "Draft mode is free -- toggle off to use real AI credits." : `Uses 1 generation. ${generationsLeft} remaining.`}
                   </p>
                 </div>
 
@@ -720,7 +746,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                         <div className="absolute inset-0 border-8 border-rose-600 rounded-full border-t-transparent animate-spin"/>
                         <div className="absolute inset-0 flex items-center justify-center"><Target size={32} className="text-rose-600 animate-pulse"/></div>
                       </div>
-                      <p className="font-black text-slate-900 text-xl tracking-tight">Generating…</p>
+                      <p className="font-black text-slate-900 text-xl tracking-tight">Generating...</p>
                       <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-[0.3em]">Identity Preservation 100%</p>
                     </div>
                   ) : (
@@ -802,64 +828,16 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                 )}
 
-                {/* Animation controls */}
-                {(generatedImage || uploadedImage) && (
-                  <div className="mt-10 pt-10 border-t border-slate-100 space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Animation Vibe</label>
-                    <textarea value={animationPrompt} onChange={e => setAnimationPrompt(e.target.value)}
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none h-16 resize-none font-medium"
-                      placeholder="Describe the motion style (optional)…"/>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={animateImage} disabled={isAnimating || isExtending}
-                        className="py-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-black text-sm rounded-2xl shadow-xl shadow-indigo-100 transition-all flex items-center justify-center gap-2">
-                        {isAnimating ? <><Loader2 className="animate-spin" size={16}/>Animating…</> : <><Zap size={16}/>Animate · {creationsLeft} left</>}
-                      </button>
-                      <button onClick={extendAnimation} disabled={isAnimating || isExtending || !animatedVideoUrl}
-                        className="py-4 bg-slate-800 hover:bg-slate-900 disabled:opacity-40 text-white font-black text-sm rounded-2xl transition-all flex items-center justify-center gap-2">
-                        {isExtending ? <><Loader2 className="animate-spin" size={16}/>Extending…</> : <><RefreshCw size={16}/>Extend</>}
-                      </button>
-                    </div>
-                    {animatedVideoUrl && (
-                      <div className="space-y-3">
-                        <div className="flex justify-center">
-                          <div className="aspect-[9/16] w-40 rounded-2xl overflow-hidden bg-slate-100 shadow-inner">
-                            <video src={animatedVideoUrl} className="w-full h-full object-cover" controls autoPlay loop muted/>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <textarea value={extensionPrompt} onChange={e => setExtensionPrompt(e.target.value)}
-                            className="w-full p-3 bg-slate-50 border border-slate-100 rounded-2xl text-xs text-slate-600 focus:ring-2 focus:ring-rose-500 outline-none h-12 resize-none font-medium"
-                            placeholder="Extension motion direction (optional)…"/>
-                          <button onClick={downloadAnimation}
-                            className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-black rounded-2xl flex items-center justify-center gap-2 text-sm">
-                            <Download size={15}/> Download Video
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Video storyboard */}
                 {selectedAngleIndex !== null && strategy.angles[selectedAngleIndex].videoPrompts?.length > 0 && (
                   <div className="mt-12 pt-12 border-t border-slate-100 space-y-8">
                     <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2 mb-2">
-                          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600"><Video size={18}/></div>
+                          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600"><Sparkles size={18}/></div>
                           <h3 className="text-xl font-black text-slate-900 tracking-tight">Viral Video Storyboard</h3>
                         </div>
                         <p className="text-slate-400 text-sm font-medium">5 AI-optimized scripts for high-converting video Pins.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-3">
-                        <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-white border-2 border-slate-100 text-slate-600 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:border-rose-200 hover:text-rose-600 transition-all shadow-sm">
-                          Pinterest Home
-                        </a>
-                        <a href="https://vid.ai/?ref=wong44" target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white hover:text-slate-900 border-2 border-slate-900 transition-all shadow-xl shadow-slate-200 group">
-                          Create Main Video <ExternalLink size={14} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform"/>
-                        </a>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 gap-4">
@@ -881,24 +859,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                         </div>
                       ))}
                     </div>
-                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                      className="bg-gradient-to-r from-indigo-600 to-indigo-500 p-6 rounded-[2.5rem] shadow-2xl shadow-indigo-200 text-white relative overflow-hidden">
-                      <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shrink-0"><Zap size={24} className="text-white animate-pulse"/></div>
-                          <div className="text-center md:text-left">
-                            <h4 className="text-lg font-black tracking-tight leading-none mb-1">Want Long or Short Videos?</h4>
-                            <p className="text-indigo-100 text-[11px] font-bold uppercase tracking-wider opacity-80">vid.ai handles both with extreme fidelity</p>
-                          </div>
-                        </div>
-                        <a href="https://vid.ai/?ref=wong44" target="_blank" rel="noopener noreferrer"
-                          className="px-8 py-4 bg-white text-indigo-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-xl">
-                          Scale Content
-                        </a>
-                      </div>
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl -translate-y-16 translate-x-16"/>
-                      <div className="absolute bottom-0 left-0 w-32 h-32 bg-indigo-400/20 rounded-full blur-3xl translate-y-16 -translate-x-16"/>
-                    </motion.div>
                   </div>
                 )}
 
@@ -930,16 +890,18 @@ No generic CTAs. Focus on social proof and value proposition.` });
               <h2 className="text-3xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
                 Turn Products Into Viral Content — <span className="text-rose-600">Without Designers or Guesswork</span>
               </h2>
-              <p className="text-lg text-slate-600 mb-2">Create high-converting Pinterest visuals and animations in seconds.</p>
+              <p className="text-lg text-slate-600 mb-2">Create high-converting Pinterest visuals in seconds.</p>
               <p className="text-sm font-bold text-rose-500 uppercase tracking-widest">Only pay for what you actually use.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <PricingCard emoji="🟢" tier="Starter" price="$19" description="For beginners testing products"
-                features={["Up to 50 Viral Pins","Pinterest strategy generator","AI image creation","Animation enabled"]} cta="Start Creating"/>
-              <PricingCard emoji="⭐" tier="Pro" price="$39" description="For serious sellers" isPopular
-                features={["Up to 150 Viral Pins","Full strategy system","Premium animations","Priority support"]} cta="Go Viral Faster"/>
-              <PricingCard emoji="🚀" tier="Scale" price="$79" description="For agencies"
-                features={["Up to 400 Viral Pins","Extended animations","API Access","High priority"]} cta="Scale My Content"/>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <PricingCard tier="Free Trial" price="$0" generations="3" description="Perfect for testing"
+                features={["3 AI generations","5 viral angles","SEO descriptions","Hashtag suggestions"]} cta="Start Free" tierKey="free" currentTier={userTier} onSelect={setUserTier}/>
+              <PricingCard tier="Starter" price="$24" generations="50" description="For beginners"
+                features={["50 AI generations","All strategy features","Image generation","Social proof detection"]} cta="Get Starter" tierKey="starter" currentTier={userTier} onSelect={setUserTier}/>
+              <PricingCard tier="Pro" price="$49" generations="200" description="For power sellers" isPopular
+                features={["200 AI generations","Everything in Starter","Priority processing","Advanced cloning modes"]} cta="Go Pro" tierKey="pro" currentTier={userTier} onSelect={setUserTier}/>
+              <PricingCard tier="Scale" price="Custom" generations="Unlimited" description="For agencies"
+                features={["Unlimited generations","API access","White-label options","Dedicated support"]} cta="Contact Sales" tierKey="scale" currentTier={userTier} onSelect={setUserTier}/>
             </div>
           </div>
         </section>
@@ -959,20 +921,55 @@ No generic CTAs. Focus on social proof and value proposition.` });
         </div>
       </footer>
 
-      {/* Full-screen animation loading overlay */}
+      {/* Upgrade Modal */}
       <AnimatePresence>
-        {(isAnimating || isExtending) && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-white/80 backdrop-blur-md">
-            <div className="text-center space-y-4">
-              <div className="relative w-20 h-20 mx-auto">
-                <div className="absolute inset-0 border-4 border-rose-100 rounded-full"/>
-                <div className="absolute inset-0 border-4 border-rose-600 rounded-full border-t-transparent animate-spin"/>
-                <div className="absolute inset-0 flex items-center justify-center text-rose-600"><Wand2 size={32} className="animate-pulse"/></div>
+        {showUpgradeModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setShowUpgradeModal(false)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Crown size={32} className="text-rose-600"/>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Upgrade Your Plan</h3>
+                <p className="text-slate-500 text-sm font-medium">
+                  You have used <span className="text-rose-600 font-black">{generationsUsed}</span> of <span className="text-slate-900 font-black">{TIER_LIMITS[userTier]}</span> generations.
+                </p>
               </div>
-              <h4 className="text-lg font-bold text-slate-900">{isExtending ? "Extending…" : "Creating Magic…"}</h4>
-              <p className="text-sm text-slate-400">Video generation takes ~60–90 seconds</p>
-            </div>
-          </div>
+              <div className="space-y-3 mb-8">
+                {[
+                  { key: "starter" as const, name: "Starter", price: "$24/mo", gens: "50 generations", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$49/mo", gens: "200 generations", desc: "Best for power sellers" },
+                  { key: "scale" as const, name: "Scale", price: "Custom", gens: "Unlimited", desc: "Best for agencies" },
+                ].map(plan => (
+                  <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
+                    className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
+                      userTier === plan.key
+                        ? "bg-rose-50 border-rose-600"
+                        : "bg-white border-slate-100 hover:border-rose-200")}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900">{plan.name}</span>
+                        {userTier === plan.key && <span className="text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Current</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{plan.desc}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-black text-slate-900">{plan.price}</span>
+                      <p className="text-[10px] text-slate-400 font-bold">{plan.gens}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setShowUpgradeModal(false)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm rounded-2xl transition-all">
+                Maybe Later
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -1013,16 +1010,26 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, description, features, cta, isPopular = false, emoji }: {
-  tier: string; price: string; description: string; features: string[]; cta: string; isPopular?: boolean; emoji: string;
+function PricingCard({ tier, price, generations, description, features, cta, isPopular = false, tierKey, currentTier, onSelect }: {
+  tier: string; price: string; generations: string; description: string; features: string[]; cta: string;
+  isPopular?: boolean; tierKey: string; currentTier: string; onSelect: (tier: "free" | "starter" | "pro" | "scale") => void;
 }) {
+  const isCurrent = currentTier === tierKey;
   return (
-    <div className={cn("relative bg-white p-8 rounded-[32px] border transition-all flex flex-col h-full",
-      isPopular ? "border-rose-200 shadow-xl shadow-rose-100 scale-105 z-10" : "border-slate-200 shadow-sm hover:shadow-md")}>
+    <div className={cn("relative bg-white p-6 rounded-[32px] border transition-all flex flex-col h-full",
+      isPopular ? "border-rose-200 shadow-xl shadow-rose-100 scale-105 z-10" : "border-slate-200 shadow-sm hover:shadow-md",
+      isCurrent ? "ring-2 ring-emerald-400" : "")}>
       {isPopular && <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-rose-600 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Most Popular</div>}
+      {isCurrent && <div className="absolute -top-4 right-4 bg-emerald-500 text-white text-[9px] font-bold px-2 py-1 rounded-full uppercase tracking-widest">Active</div>}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1"><span className="text-xl">{emoji}</span><h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight">{tier}</h3></div>
-        <div className="flex items-baseline gap-1 mb-2"><span className="text-4xl font-black text-slate-900">{price}</span><span className="text-slate-400 text-sm font-medium">/ mo</span></div>
+        <div className="flex items-center gap-2 mb-1">
+          <h3 className="text-lg font-bold text-slate-900 uppercase tracking-tight">{tier}</h3>
+        </div>
+        <div className="flex items-baseline gap-1 mb-1">
+          <span className="text-4xl font-black text-slate-900">{price}</span>
+          {price !== "Custom" && <span className="text-slate-400 text-sm font-medium">/ mo</span>}
+        </div>
+        <p className="text-[11px] font-black text-rose-600 mb-2">{generations} generations</p>
         <p className="text-slate-500 text-sm leading-relaxed">{description}</p>
       </div>
       <ul className="space-y-3 mb-8 flex-grow">
@@ -1032,9 +1039,12 @@ function PricingCard({ tier, price, description, features, cta, isPopular = fals
           </li>
         ))}
       </ul>
-      <button className={cn("w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2",
-        isPopular ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-200" : "bg-slate-900 hover:bg-slate-800 text-white")}>
-        {cta} <ArrowRight size={18}/>
+      <button onClick={() => onSelect(tierKey as "free" | "starter" | "pro" | "scale")}
+        className={cn("w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-2",
+          isCurrent
+            ? "bg-emerald-500 hover:bg-emerald-600 text-white"
+            : isPopular ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-200" : "bg-slate-900 hover:bg-slate-800 text-white")}>
+        {isCurrent ? "Current Plan" : cta} <ArrowRight size={18}/>
       </button>
     </div>
   );
