@@ -1,5 +1,5 @@
-import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+const Stripe = require("stripe");
+const { createClient } = require("@supabase/supabase-js");
 
 const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY);
 const supabase = createClient(
@@ -12,16 +12,22 @@ const PLAN_CONFIG = {
   price_1TXDk3B7i0tTYaLUBr36BDko: { plan: "pro",     generations: 200 },
 };
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: "sessionId required" });
 
+  console.log("[activate] sessionId:", sessionId);
+  console.log("[activate] STRIPE_KEY exists:", !!process.env.VITE_STRIPE_SECRET_KEY);
+  console.log("[activate] SUPABASE_URL exists:", !!process.env.VITE_SUPABASE_URL);
+  console.log("[activate] SERVICE_ROLE exists:", !!process.env.VITE_SUPABASE_SERVICE_ROLE_KEY);
+
   try {
-    // Fetch session directly from Stripe
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     console.log("[activate] payment_status:", session.payment_status);
+    console.log("[activate] email:", session.customer_details?.email);
+    console.log("[activate] metadata:", JSON.stringify(session.metadata));
 
     if (session.payment_status !== "paid") {
       return res.status(400).json({ error: "Payment not completed" });
@@ -31,9 +37,8 @@ export default async function handler(req, res) {
     const priceId = session.metadata?.priceId;
     const plan    = PLAN_CONFIG[priceId];
 
-    console.log("[activate] email:", email, "priceId:", priceId, "plan:", plan?.plan);
-
     if (!email || !plan) {
+      console.error("[activate] Missing — email:", email, "priceId:", priceId);
       return res.status(400).json({ error: `Missing data — email:${email} priceId:${priceId}` });
     }
 
@@ -56,15 +61,15 @@ export default async function handler(req, res) {
     );
 
     if (error) {
-      console.error("[activate] Supabase error:", error.message);
+      console.error("[activate] Supabase error:", error.message, error.details, error.hint);
       return res.status(500).json({ error: error.message });
     }
 
-    console.log("[activate] ✅ Activated", plan.plan, "for", email);
+    console.log("[activate] SUCCESS:", plan.plan, "for", email);
     res.status(200).json({ success: true, email, plan: plan.plan, generations: plan.generations });
 
   } catch (err) {
-    console.error("[activate] Error:", err.message);
+    console.error("[activate] CATCH error:", err.message, err.stack);
     res.status(500).json({ error: err.message });
   }
-}
+};
