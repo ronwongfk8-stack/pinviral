@@ -13,7 +13,7 @@ import {
   Sparkles, Copy, Check, Image as ImageIcon, Loader2, ArrowRight,
   Upload, Download, RefreshCw, Zap, Target, Search, ExternalLink,
   Eye, AlertCircle, Star, Palette, Plus, Hash, Accessibility,
-  User, Mail, Crown
+  User, Crown
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -369,38 +369,31 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
       <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
 
-        {/* ── User info bar (when no strategy yet) ─────────────────────────── */}
+        {/* ── User info bar (auto-generated) ─────────────────────────── */}
         {!strategy && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
             className="max-w-4xl mx-auto mb-6">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row items-center gap-4">
-              <div className="flex items-center gap-3 flex-1 w-full">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div className="flex items-center gap-4">
                 <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-600">
                   <User size={18}/>
                 </div>
-                <div className="flex-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Your Name</label>
-                  <input type="text" placeholder="Enter your name"
-                    className="w-full text-sm font-bold text-slate-700 bg-transparent outline-none placeholder:text-slate-300"
-                    value={userName} onChange={e => setUserName(e.target.value)}/>
+                <div>
+                  <p className="text-sm font-black text-slate-900">{userName || "Guest User"}</p>
+                  <p className="text-[10px] text-slate-400 font-bold">{userEmail || "Auto-generated on signup"}</p>
                 </div>
               </div>
-              <div className="w-px h-8 bg-slate-100 hidden sm:block"/>
-              <div className="flex items-center gap-3 flex-1 w-full">
-                <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
-                  <Mail size={18}/>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl">
+                  <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
+                    {generationsUsed}/{TIER_LIMITS[userTier]} Used
+                  </span>
                 </div>
-                <div className="flex-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Email</label>
-                  <input type="email" placeholder="Enter your email"
-                    className="w-full text-sm font-bold text-slate-700 bg-transparent outline-none placeholder:text-slate-300"
-                    value={userEmail} onChange={e => setUserEmail(e.target.value)}/>
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl">
+                  <Crown size={14} className="text-amber-500"/>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-700">{TIER_NAMES[userTier]}</span>
                 </div>
-              </div>
-              <div className="w-px h-8 bg-slate-100 hidden sm:block"/>
-              <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl shrink-0">
-                <Crown size={14} className="text-amber-500"/>
-                <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{TIER_NAMES[userTier]}</span>
               </div>
             </div>
           </motion.div>
@@ -893,15 +886,13 @@ No generic CTAs. Focus on social proof and value proposition.` });
               <p className="text-lg text-slate-600 mb-2">Create high-converting Pinterest visuals in seconds.</p>
               <p className="text-sm font-bold text-rose-500 uppercase tracking-widest">Only pay for what you actually use.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
               <PricingCard tier="Free Trial" price="$0" generations="3" description="Perfect for testing"
                 features={["3 AI generations","5 viral angles","SEO descriptions","Hashtag suggestions"]} cta="Start Free" tierKey="free" currentTier={userTier} onSelect={setUserTier}/>
               <PricingCard tier="Starter" price="$24" generations="50" description="For beginners"
                 features={["50 AI generations","All strategy features","Image generation","Social proof detection"]} cta="Get Starter" tierKey="starter" currentTier={userTier} onSelect={setUserTier}/>
               <PricingCard tier="Pro" price="$49" generations="200" description="For power sellers" isPopular
                 features={["200 AI generations","Everything in Starter","Priority processing","Advanced cloning modes"]} cta="Go Pro" tierKey="pro" currentTier={userTier} onSelect={setUserTier}/>
-              <PricingCard tier="Scale" price="Custom" generations="Unlimited" description="For agencies"
-                features={["Unlimited generations","API access","White-label options","Dedicated support"]} cta="Contact Sales" tierKey="scale" currentTier={userTier} onSelect={setUserTier}/>
             </div>
           </div>
         </section>
@@ -943,7 +934,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 {[
                   { key: "starter" as const, name: "Starter", price: "$24/mo", gens: "50 generations", desc: "Best for beginners" },
                   { key: "pro" as const, name: "Pro", price: "$49/mo", gens: "200 generations", desc: "Best for power sellers" },
-                  { key: "scale" as const, name: "Scale", price: "Custom", gens: "Unlimited", desc: "Best for agencies" },
                 ].map(plan => (
                   <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
