@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { priceId, userId } = req.body;
+    const { priceId, userId, email } = req.body;
     if (!priceId) return res.status(400).json({ error: "priceId is required" });
 
     const params = new URLSearchParams({
@@ -14,11 +14,17 @@ export default async function handler(req, res) {
       "line_items[0][price]": priceId,
       "line_items[0][quantity]": "1",
       mode: "payment",
-      success_url: `${req.headers.origin}/?payment=success`,
-      cancel_url: `${req.headers.origin}/?payment=cancelled`,
+      success_url: `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}`,
+      cancel_url:  `${req.headers.origin}/?payment=cancelled`,
       "metadata[userId]": userId || "anonymous",
       "metadata[priceId]": priceId,
+      "metadata[email]": email || "",
     });
+
+    // Pre-fill email in Stripe checkout if provided
+    if (email) {
+      params.append("customer_email", email);
+    }
 
     const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",

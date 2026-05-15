@@ -18,6 +18,7 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { supabase } from "./supabase";
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -111,6 +112,12 @@ export default function App() {
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
+  const [showEmailModal, setShowEmailModal]           = useState(false);
+  const [pendingPriceId, setPendingPriceId]           = useState<string | null>(null);
+  const [emailInput, setEmailInput]                   = useState("");
+  const [paymentSuccess, setPaymentSuccess]           = useState(false);
+  const [isLoadingUser, setIsLoadingUser]             = useState(false);
+
   const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
@@ -118,6 +125,44 @@ export default function App() {
 
   const previewRef = useRef<HTMLDivElement>(null);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
+
+  // ── Load user from Supabase on mount (handles post-payment redirect) ─────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const email   = params.get("email");
+
+    if (payment === "success" && email) {
+      setPaymentSuccess(true);
+      setUserEmail(email);
+      loadUserFromSupabase(email);
+      // Clean URL
+      window.history.replaceState({}, "", "/");
+    } else {
+      // Check localStorage for returning user
+      const saved = localStorage.getItem("pinviral_email");
+      if (saved) {
+        setUserEmail(saved);
+        loadUserFromSupabase(saved);
+      }
+    }
+  }, []);
+
+  const loadUserFromSupabase = async (email: string) => {
+    setIsLoadingUser(true);
+    try {
+      const res = await fetch(`/api/get-user?email=${encodeURIComponent(email)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const user = data.user;
+      if (!user) return;
+      localStorage.setItem("pinviral_email", email);
+      setUserEmail(email);
+      setUserTier(user.plan as any);
+      setGenerationsUsed(user.images_total - user.images_left);
+    } catch { /* non-fatal */ }
+    finally { setIsLoadingUser(false); }
+  };
 
   // Auto-fetch social proof when URL is entered
   useEffect(() => {
@@ -148,6 +193,26 @@ export default function App() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  // ── Checkout with email ───────────────────────────────────────────────────────
+  const handleProceedToCheckout = async () => {
+    if (!emailInput.includes("@") || !pendingPriceId) return;
+    setShowEmailModal(false);
+    setUserEmail(emailInput);
+    localStorage.setItem("pinviral_email", emailInput);
+    try {
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priceId: pendingPriceId, email: emailInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      window.location.href = data.url;
+    } catch (err: any) {
+      alert("Payment failed: " + err.message);
+    }
   };
 
   // ── Generate strategy ────────────────────────────────────────────────────────
@@ -335,6 +400,59 @@ No generic CTAs. Focus on social proof and value proposition.` });
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-rose-100 selection:text-rose-600">
+
+      {/* ── Payment Success Banner ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {paymentSuccess && (
+          <motion.div initial={{ opacity: 0, y: -40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -40 }}
+            className="fixed top-0 left-0 right-0 z-[200] bg-emerald-500 text-white px-4 py-3 flex items-center justify-center gap-3 shadow-lg">
+            <Check size={18} className="shrink-0"/>
+            <span className="font-black text-sm">
+              🎉 Payment successful! Welcome to <span className="uppercase">{TIER_NAMES[userTier]}</span> — {TIER_LIMITS[userTier]} generations activated for <span className="underline">{userEmail}</span>
+            </span>
+            <button onClick={() => setPaymentSuccess(false)} className="ml-4 text-white/80 hover:text-white text-lg leading-none">×</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Email Modal (shown before checkout) ─────────────────────────────── */}
+      <AnimatePresence>
+        {showEmailModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setShowEmailModal(false)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="text-center mb-6">
+                <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Crown size={28} className="text-rose-600"/>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mb-2">Enter Your Email</h3>
+                <p className="text-slate-500 text-sm font-medium">We'll use this to activate your credits after payment.</p>
+              </div>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none text-slate-700 font-bold mb-4"
+                value={emailInput}
+                onChange={e => setEmailInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleProceedToCheckout()}
+                autoFocus
+              />
+              <button
+                onClick={handleProceedToCheckout}
+                disabled={!emailInput.includes("@")}
+                className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black rounded-2xl transition-all">
+                Continue to Payment →
+              </button>
+              <button onClick={() => setShowEmailModal(false)} className="w-full mt-3 py-3 text-slate-400 text-sm font-bold hover:text-slate-600 transition-all">
+                Cancel
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
@@ -912,6 +1030,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="free" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
               <PricingCard 
                 tier="Starter" 
@@ -929,6 +1048,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="starter" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
               <PricingCard 
                 tier="Pro" 
@@ -948,6 +1068,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="pro" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
             </div>
           </div>
@@ -1056,46 +1177,20 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect }: any) {
+function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
   const [loading, setLoading] = useState(false);
-  
+
   const PRICE_IDS: Record<string, string> = {
     starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
-    pro: "price_1TXDk3B7i0tTYaLUBr36BDko",
+    pro:     "price_1TXDk3B7i0tTYaLUBr36BDko",
   };
 
-  async function handleBuy() {
-    if (tierKey === "free") {
-      onSelect("free");
-      return;
-    }
-    
-    setLoading(true);
-    try {
-      const res = await fetch('/api/create-checkout-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          priceId: PRICE_IDS[tierKey],
-          userId: 'anonymous'
-        }),
-      });
-      
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await res.text();
-        throw new Error(`Server error: ${res.status} - ${text.slice(0, 100)}`);
-      }
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
-      
-      window.location.href = data.url;
-    } catch (err: any) {
-      alert('Payment failed: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+  function handleBuy() {
+    if (tierKey === "free") { onSelect("free"); return; }
+    const priceId = PRICE_IDS[tierKey];
+    if (!priceId) { alert("Price not configured for this plan."); return; }
+    // Open email modal in parent, passing priceId
+    onRequestCheckout(priceId);
   }
 
   const isCurrent = currentTier === tierKey;
