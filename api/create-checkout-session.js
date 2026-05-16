@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     const { priceId, userId, email } = req.body;
     if (!priceId) return res.status(400).json({ error: "priceId is required" });
 
-    const successUrl = `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&session_id={CHECKOUT_SESSION_ID}`;
+    const successUrl = `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&price_id=${encodeURIComponent(priceId)}`;
     const cancelUrl  = `${req.headers.origin}/?payment=cancelled`;
 
     const params = new URLSearchParams();

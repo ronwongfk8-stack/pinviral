@@ -126,14 +126,14 @@ export default function App() {
   const previewRef = useRef<HTMLDivElement>(null);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
-  // ── Activate plan directly via Stripe session ID ─────────────────────────────
-  const activatePlan = async (sessionId: string, email: string) => {
+  // ── Activate plan directly via email + priceId ───────────────────────────────
+  const activatePlan = async (email: string, priceId: string) => {
     setIsLoadingUser(true);
     try {
       const res = await fetch("/api/activate-plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ email, priceId }),
       });
       const data = await res.json();
       console.log("[activatePlan] response:", JSON.stringify(data));
@@ -164,10 +164,12 @@ export default function App() {
       setUserEmail(email);
       localStorage.setItem("pinviral_email", email);
       window.history.replaceState({}, "", "/");
-      if (sessionId) {
-        activatePlan(sessionId, email);
+      const priceId = params.get("price_id");
+      console.log("[mount] priceId:", priceId);
+      if (priceId) {
+        activatePlan(email, priceId);
       } else {
-        console.warn("[mount] No session_id in URL — falling back to Supabase");
+        console.warn("[mount] No price_id in URL — falling back to Supabase");
         loadUserFromSupabase(email);
       }
     } else {
