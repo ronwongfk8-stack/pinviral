@@ -123,6 +123,20 @@ export default function App() {
   const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
 
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // ── Force canvas to exact aspect ratio height regardless of flex parent ───────
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const apply = () => {
+      const w = el.offsetWidth;
+      el.style.height = (aspectRatio === "9:16" ? (w * 16 / 9) : (w * 3 / 2)) + "px";
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [aspectRatio]);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // ── Activate plan directly via email + priceId ───────────────────────────────
@@ -871,7 +885,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
             {/* Right: main visual workspace */}
             <div className="lg:col-span-7 space-y-6">
-              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 min-h-[750px] flex flex-col">
+              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 flex flex-col">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
@@ -889,8 +903,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)]",
-                    aspectRatio === "9:16" ? "w-full max-w-[360px] aspect-[9/16]" : "w-full max-w-[400px] aspect-[2/3]")}
+                  className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] w-full max-w-[360px] flex-shrink-0"
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
 
