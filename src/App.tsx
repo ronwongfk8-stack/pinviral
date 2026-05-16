@@ -404,10 +404,40 @@ No generic CTAs. Focus on social proof and value proposition.` });
   const downloadImage = async () => {
     if (!previewRef.current) return;
     try {
-      const url  = await toPng(previewRef.current, { cacheBust: true, pixelRatio: 3, style: { borderRadius: "0", boxShadow: "none", margin: "0" } });
-      const link = Object.assign(document.createElement("a"), { href: url, download: `pinterest-pin-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png` });
-      document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    } catch { setError("Download failed. Right-click the image and select 'Save Image As'."); }
+      // Exact Pinterest dimensions: 1000x1500 (9:16) or 1000x1500 (2:3 = 1000x1333)
+      const W = 1000;
+      const H = aspectRatio === "9:16" ? 1500 : 1333;
+
+      // Measure the rendered element on screen
+      const rect = previewRef.current.getBoundingClientRect();
+      const scaleX = W / rect.width;
+      const scaleY = H / rect.height;
+
+      const url = await toPng(previewRef.current, {
+        cacheBust: true,
+        pixelRatio: Math.max(scaleX, scaleY),
+        canvasWidth:  W,
+        canvasHeight: H,
+        style: {
+          borderRadius: "0",
+          boxShadow: "none",
+          margin: "0",
+          width:  rect.width  + "px",
+          height: rect.height + "px",
+        },
+      });
+
+      const link = Object.assign(document.createElement("a"), {
+        href: url,
+        download: `pinterest-pin-${aspectRatio.replace(":","-")}-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`,
+      });
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Download error:", err);
+      setError("Download failed. Right-click the image and select 'Save Image As'.");
+    }
   };
 
   // ── Drag handlers for text overlay ──────────────────────────────────────────
@@ -859,8 +889,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)]",
-                    aspectRatio === "9:16" ? "max-w-[400px] aspect-[9/16]" : "max-w-[450px] aspect-[2/3]")}
+                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)]",
+                    aspectRatio === "9:16" ? "w-full max-w-[360px] aspect-[9/16]" : "w-full max-w-[400px] aspect-[2/3]")}
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
 
@@ -877,7 +907,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   ) : (
                     <>
                       <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                        className="w-full h-full object-cover select-none pointer-events-none"
+                        className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
                         referrerPolicy="no-referrer" draggable={false}/>
 
                       {/* Draggable text overlay */}
