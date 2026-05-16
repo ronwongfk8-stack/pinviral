@@ -934,27 +934,72 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                 </div>
 
-                {/* ── Pinterest + Video tool links ── */}
+                {/* ── Pinterest link + Generate This Video section ── */}
                 {selectedAngleIndex !== null && (
-                  <div className="mt-4 space-y-2">
-                    <a href="https://pinterest.com/pin/create/button/" target="_blank" rel="noopener noreferrer"
+                  <div className="mt-4 space-y-3">
+
+                    {/* Pinterest — plain direct link */}
+                    <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer"
                       className="w-full flex items-center justify-center gap-2 py-3 bg-[#E60023] hover:bg-[#c0001d] text-white font-black text-[11px] rounded-2xl uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-red-100">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                      Post to Pinterest
+                      Open Pinterest
                     </a>
-                    <div className="grid grid-cols-2 gap-2">
-                      <a href="https://vid.ai/?ref=wong44" target="_blank" rel="noopener noreferrer"
-                        className="flex flex-col items-center gap-1 py-3 px-2 bg-slate-900 hover:bg-slate-700 text-white font-black text-[9px] rounded-2xl uppercase tracking-widest transition-all active:scale-95 text-center">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Long Video
-                        <span className="text-slate-400 font-bold normal-case tracking-normal text-[8px]">vid.ai</span>
-                      </a>
-                      <a href="https://submagic.co/?via=wong86" target="_blank" rel="noopener noreferrer"
-                        className="flex flex-col items-center gap-1 py-3 px-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[9px] rounded-2xl uppercase tracking-widest transition-all active:scale-95 text-center">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                        Short Video
-                        <span className="text-indigo-200 font-bold normal-case tracking-normal text-[8px]">submagic.co</span>
-                      </a>
+
+                    {/* Generate This Video section */}
+                    <div className="border border-slate-100 rounded-2xl p-4 space-y-3 bg-slate-50/50">
+                      <div>
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-[8px] font-black bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">Recommended AI Stack</span>
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Viral Content Creation Engines</p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Vid AI card */}
+                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-black text-slate-900">Vid AI</span>
+                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            </div>
+                          </div>
+                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Video Generation</p>
+                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Turn your viral prompt into high-retention clips for TikTok & Reels.</p>
+                        </div>
+                        {/* Submagic card */}
+                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-black text-slate-900">Submagic</span>
+                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            </div>
+                          </div>
+                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Caption Architect</p>
+                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Add viral captions, b-roll & sound effects automatically.</p>
+                        </div>
+                      </div>
+
+                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Export & Start Generating</p>
+                      <div className="grid grid-cols-1 gap-2">
+                        <button
+                          onClick={() => {
+                            const prompt = strategy.angles[selectedAngleIndex]?.aiImagePrompt || editableHeadline || productName;
+                            navigator.clipboard.writeText(prompt);
+                            window.open("https://vid.ai/?ref=wong44", "_blank");
+                          }}
+                          className="w-full py-3 bg-slate-900 hover:bg-slate-700 text-white font-black text-[9px] rounded-xl uppercase tracking-widest transition-all active:scale-95">
+                          Copy Prompt &amp; Open Vid AI
+                        </button>
+                        <button
+                          onClick={() => {
+                            const script = strategy.angles[selectedAngleIndex]?.pinDescription || editableSubtext || productName;
+                            navigator.clipboard.writeText(script);
+                            window.open("https://submagic.co/?via=wong86", "_blank");
+                          }}
+                          className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 font-black text-[9px] rounded-xl border-2 border-slate-200 uppercase tracking-widest transition-all active:scale-95">
+                          Copy Script &amp; Open Submagic
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
