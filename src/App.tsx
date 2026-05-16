@@ -994,3 +994,286 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
 
                 {error && (
+                  <div className="mt-6 flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
+                    <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
+                    <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
+                    <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Empty state */}
+        {!strategy && !isLoading && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
+            <FeatureCard icon={<Zap className="text-rose-500"/>} title="Viral Psychology" desc="Proven impulse-buy triggers ensure your pins get saved."/>
+            <FeatureCard icon={<Search className="text-rose-500"/>} title="SEO Optimized" desc="Descriptions packed with high-volume Pinterest keywords."/>
+            <FeatureCard icon={<ImageIcon className="text-rose-500"/>} title="AI Visuals" desc="Generate stunning product images via Imagen & Gemini."/>
+          </motion.div>
+        )}
+
+        {/* ── PRICING SECTION ─────────────────────────────────────────────── */}
+        <section id="pricing-section" className="py-24 bg-slate-50 border-t border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Section Header */}
+            <div className="text-center max-w-3xl mx-auto mb-16">
+              <p className="text-rose-600 font-black uppercase tracking-[0.3em] text-xs mb-4">Pricing</p>
+              <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+                Simple, Transparent Pricing
+              </h2>
+              <p className="text-lg text-slate-500 mb-2">
+                Pay once, generate forever. No subscriptions, no hidden fees.
+              </p>
+              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold mt-4">
+                <Check size={16} />
+                One-time purchase — credits never expire
+              </div>
+            </div>
+
+            {/* Pricing Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-stretch">
+              <PricingCard 
+                tier="Free Trial" 
+                price="$0" 
+                generations="3 generations"
+                description="Perfect for testing the platform"
+                features={[
+                  "3 AI generations",
+                  "5 viral angles per product",
+                  "SEO descriptions & hashtags",
+                  "Basic image export",
+                  "Community support"
+                ]} 
+                tierKey="free" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
+              />
+              <PricingCard 
+                tier="Starter" 
+                price="$24" 
+                generations="50 generations"
+                description="For creators getting started"
+                features={[
+                  "50 AI generations",
+                  "All viral strategy features",
+                  "AI image generation",
+                  "Social proof detection",
+                  "HD image export",
+                  "Email support"
+                ]} 
+                tierKey="starter" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
+              />
+              <PricingCard 
+                tier="Pro" 
+                price="$49" 
+                generations="200 generations"
+                description="For power sellers & agencies"
+                features={[
+                  "200 AI generations",
+                  "Everything in Starter",
+                  "Priority processing",
+                  "Advanced cloning modes",
+                  "4K image export",
+                  "Priority support",
+                  "Video storyboard generation"
+                ]} 
+                isPopular
+                tierKey="pro" 
+                currentTier={userTier} 
+                onSelect={setUserTier}
+                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
+              />
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="bg-slate-900 border-t border-white/10 py-16 px-6 text-white mt-12">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/40"><Sparkles size={20} className="text-white"/></div>
+            <span className="text-2xl font-black tracking-tight">PIN<span className="text-rose-500">VIRAL</span></span>
+          </div>
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">© 2026 PinViral. Not affiliated with Pinterest Inc.</p>
+          <div className="flex items-center gap-2 text-emerald-500">
+            <div className="w-1.5 h-1.5 bg-current rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]"/>
+            <span className="text-[10px] font-black uppercase tracking-widest">Systems Operational</span>
+          </div>
+        </div>
+      </footer>
+
+      {/* Upgrade Modal */}
+      <AnimatePresence>
+        {showUpgradeModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setShowUpgradeModal(false)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Crown size={32} className="text-rose-600"/>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Upgrade Your Plan</h3>
+                <p className="text-slate-500 text-sm font-medium">
+                  You have used <span className="text-rose-600 font-black">{generationsUsed}</span> of <span className="text-slate-900 font-black">{TIER_LIMITS[userTier]}</span> generations.
+                </p>
+              </div>
+              <div className="space-y-3 mb-8">
+                {[
+                  { key: "starter" as const, name: "Starter", price: "$24", gens: "50 generations", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$49", gens: "200 generations", desc: "Best for power sellers" },
+                ].map(plan => (
+                  <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
+                    className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
+                      userTier === plan.key
+                        ? "bg-rose-50 border-rose-600"
+                        : "bg-white border-slate-100 hover:border-rose-200")}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-black text-slate-900">{plan.name}</span>
+                        {userTier === plan.key && <span className="text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Current</span>}
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{plan.desc}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-black text-slate-900">{plan.price}</span>
+                      <p className="text-[10px] text-slate-400 font-bold">{plan.gens}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setShowUpgradeModal(false)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm rounded-2xl transition-all">
+                Maybe Later
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
+  return (
+    <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
+      {imageUrl ? (
+        <>
+          <img src={imageUrl} alt="Uploaded product" className="w-full h-full object-cover"/>
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+            <RefreshCw size={28} className="mb-2"/>
+            <p className="text-xs font-black uppercase tracking-widest">Change Image</p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-4 text-slate-300 group-hover:text-rose-500 group-hover:scale-110 transition-all"><Upload size={32} className="stroke-[2]"/></div>
+          <p className="text-lg font-black text-slate-900 tracking-tight mb-1">Source Visual</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload your product photo</p>
+        </>
+      )}
+      <input type="file" className="hidden" accept="image/*" onChange={onImageUpload}/>
+    </label>
+  );
+}
+
+function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow text-center">
+      <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4">{icon}</div>
+      <h3 className="font-bold text-slate-800 mb-2">{title}</h3>
+      <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
+    </div>
+  );
+}
+
+function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
+  const [loading, setLoading] = useState(false);
+
+  const PRICE_IDS: Record<string, string> = {
+    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
+    pro:     "price_1TXDk3B7i0tTYaLUBr36BDko",
+  };
+
+  function handleBuy() {
+    if (tierKey === "free") { onSelect("free"); return; }
+    const priceId = PRICE_IDS[tierKey];
+    if (!priceId) { alert("Price not configured for this plan."); return; }
+    // Open email modal in parent, passing priceId
+    onRequestCheckout(priceId);
+  }
+
+  const isCurrent = currentTier === tierKey;
+  const isFree = tierKey === "free";
+
+  return (
+    <div className={`relative rounded-3xl border-2 p-8 flex flex-col gap-6 min-h-[580px] w-full transition-all duration-300 hover:scale-[1.02] ${
+      isPopular 
+        ? "border-rose-500 shadow-2xl shadow-rose-200/50 bg-white md:-mt-4 md:mb-4" 
+        : "border-slate-200 shadow-xl shadow-slate-200/50 bg-white"
+    } ${isCurrent ? "ring-4 ring-emerald-400 ring-offset-2" : ""}`}>
+      
+      {isPopular && (
+        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-rose-500 to-rose-600 text-white text-xs font-bold px-6 py-2.5 rounded-full shadow-lg uppercase tracking-wider">
+          Most Popular
+        </div>
+      )}
+      
+      {/* Header */}
+      <div className="text-center pt-2">
+        <h3 className={`text-2xl font-black ${isPopular ? "text-rose-600" : "text-slate-800"}`}>
+          {tier}
+        </h3>
+        <p className="text-sm text-slate-500 mt-2 font-medium">{description}</p>
+      </div>
+      
+      {/* Price */}
+      <div className="text-center py-6 border-y border-slate-100">
+        <div className="flex items-baseline justify-center gap-1">
+          <span className="text-5xl font-black text-slate-900">{price}</span>
+          {!isFree && <span className="text-sm text-slate-400 font-medium">one-time</span>}
+        </div>
+        <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold">
+          <Zap size={16} />
+          {generations}
+        </div>
+      </div>
+      
+      {/* Features */}
+      <ul className="flex flex-col gap-3 flex-1">
+        {features.map((f: string, i: number) => (
+          <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
+            <Check size={18} className={`mt-0.5 shrink-0 ${isPopular ? "text-rose-500" : "text-emerald-500"}`} />
+            <span className="font-medium">{f}</span>
+          </li>
+        ))}
+      </ul>
+      
+      {/* CTA Button */}
+      <button
+        onClick={handleBuy}
+        disabled={loading || isCurrent}
+        className={`w-full py-4 rounded-xl text-sm font-bold transition-all duration-200 ${
+          isCurrent 
+            ? "bg-emerald-100 text-emerald-700 cursor-default"
+            : isFree
+            ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-2 border-slate-300"
+            : isPopular
+            ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700 shadow-lg shadow-rose-200"
+            : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
+        }`}
+      >
+        {loading ? "Processing..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
+      </button>
+    </div>
+  );
+}
