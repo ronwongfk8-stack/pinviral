@@ -3,7 +3,7 @@ export default async function handler(req, res) {
 
   const { email, priceId } = req.body;
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseUrl = process.env.VITE_SUPABASE_URL?.replace(/\/+$/, "");
   const serviceKey  = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
   console.log("[activate] email:", email, "priceId:", priceId);

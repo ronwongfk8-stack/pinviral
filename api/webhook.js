@@ -1,11 +1,14 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY);
+// Support both VITE_STRIPE_SECRET_KEY and STRIPE_SECRET_KEY env var names
+const stripe = new Stripe(
+  process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY
+);
 
 const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+  process.env.VITE_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
+  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 const PLAN_CONFIG = {
@@ -28,7 +31,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const sig     = req.headers["stripe-signature"];
-  const secret  = process.env.VITE_STRIPE_WEBHOOK_SECRET;
+  const secret  = process.env.STRIPE_WEBHOOK_SECRET || process.env.VITE_STRIPE_WEBHOOK_SECRET;
   const rawBody = await getRawBody(req);
 
   let event;
@@ -49,7 +52,18 @@ export default async function handler(req, res) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const email   = session.customer_details?.email;
-    const priceId = session.metadata?.priceId;
+    // priceId may be in metadata OR must be retrieved from line_items
+    let priceId = session.metadata?.priceId;
+
+    if (!priceId && session.id) {
+      try {
+        const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
+        priceId = lineItems.data[0]?.price?.id;
+        console.log("[webhook] priceId from line_items:", priceId);
+      } catch (e) {
+        console.error("[webhook] Could not fetch line items:", e.message);
+      }
+    }
 
     console.log("[webhook] email:", email, "priceId:", priceId);
 
