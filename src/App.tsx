@@ -934,6 +934,39 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                 </div>
 
+                {/* Headline / subtext variants — moved above Pinterest */}
+                {selectedAngleIndex !== null && (
+                  <div className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
+                        <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {strategy.angles[selectedAngleIndex].headlines.map((h, i) => (
+                          <button key={i} onClick={() => setEditableHeadline(h)}
+                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
+                              editableHeadline === h ? "bg-rose-600 border-rose-600 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
+                            Var {i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
+                      <div className="flex flex-wrap gap-2">
+                        {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
+                          <button key={i} onClick={() => setEditableSubtext(s)}
+                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
+                              editableSubtext === s ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
+                            Proof {i + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Pinterest link + Generate This Video section ── */}
                 {selectedAngleIndex !== null && (
                   <div className="mt-4 space-y-3">
@@ -999,39 +1032,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                           className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 font-black text-[9px] rounded-xl border-2 border-slate-200 uppercase tracking-widest transition-all active:scale-95">
                           Copy Script &amp; Open Submagic
                         </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Headline / subtext variants */}
-                {selectedAngleIndex !== null && (
-                  <div className="mt-auto pt-10 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-slate-100">
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
-                        <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].headlines.map((h, i) => (
-                          <button key={i} onClick={() => setEditableHeadline(h)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableHeadline === h ? "bg-rose-600 border-rose-600 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Var {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
-                          <button key={i} onClick={() => setEditableSubtext(s)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableSubtext === s ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Proof {i + 1}
-                          </button>
-                        ))}
                       </div>
                     </div>
                   </div>
