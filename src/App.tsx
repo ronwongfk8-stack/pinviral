@@ -903,7 +903,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] w-full max-w-[360px] flex-shrink-0"
+                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start", aspectRatio === "9:16" ? "w-full max-w-[360px] aspect-[9/16]" : "w-full max-w-[400px] aspect-[2/3]")}
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
 
