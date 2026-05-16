@@ -1,30 +1,36 @@
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
-);
-
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
 
   const { email } = req.query;
   if (!email) return res.status(400).json({ error: "email is required" });
 
-  console.log("[get-user] looking up:", email);
-  console.log("[get-user] supabase url:", process.env.VITE_SUPABASE_URL?.slice(0,20));
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const serviceKey  = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  const cleanEmail  = decodeURIComponent(email).toLowerCase().trim();
 
-  const { data, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", email.toLowerCase().trim())
-    .single();
+  console.log("[get-user] looking up:", cleanEmail);
 
-  if (error || !data) {
-    console.log("[get-user] not found:", error?.message);
-    return res.status(404).json({ error: "User not found" });
+  try {
+    const sbRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=*`,
+      {
+        headers: {
+          "apikey":        serviceKey,
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+      }
+    );
+
+    const data = await sbRes.json();
+    console.log("[get-user] status:", sbRes.status, "rows:", data?.length);
+
+    if (!sbRes.ok || !data || data.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.status(200).json({ user: data[0] });
+  } catch (err) {
+    console.error("[get-user] error:", err.message);
+    res.status(500).json({ error: err.message });
   }
-
-  console.log("[get-user] found:", data.email, "plan:", data.plan);
-  res.status(200).json({ user: data });
 }
