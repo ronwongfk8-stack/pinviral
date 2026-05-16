@@ -1,14 +1,50 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { email, priceId } = req.body;
+  const { email, priceId, deduct, images_left: directLeft } = req.body;
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL?.replace(/\/+$/, "");
-  const serviceKey  = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  // ── Deduct-only mode (called after each generation) ─────────────────────────
+  if (deduct && email && typeof directLeft === "number") {
+    const sUrl = (
+      process.env.VITE_PUBLIC_SUPABASE_URL ||
+      process.env.VITE_SUPABASE_URL ||
+      process.env.SUPABASE_URL
+    )?.replace(/\/+$/, "");
+    const sKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    try {
+      await fetch(`${sUrl}/rest/v1/users?email=eq.${encodeURIComponent(email.toLowerCase().trim())}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": sKey,
+          "Authorization": `Bearer ${sKey}`,
+          "Prefer": "return=minimal",
+        },
+        body: JSON.stringify({ images_left: directLeft, updated_at: new Date().toISOString() }),
+      });
+    } catch (err) { console.error("[activate/deduct] error:", err.message); }
+    return res.status(200).json({ ok: true });
+  }
+
+  // Support all env var name variants
+  const supabaseUrl = (
+    process.env.VITE_PUBLIC_SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.SUPABASE_URL
+  )?.replace(/\/+$/, "");
+
+  const serviceKey = (
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
 
   console.log("[activate] email:", email, "priceId:", priceId);
   console.log("[activate] url:", supabaseUrl?.slice(0, 40));
   console.log("[activate] key length:", serviceKey?.length);
+
+  if (!supabaseUrl || !serviceKey) {
+    return res.status(500).json({ error: "Server misconfiguration: missing Supabase env vars" });
+  }
 
   const PLAN_CONFIG = {
     "price_1TXDjcB7i0tTYaLUodi6N2Zy": { plan: "starter", generations: 50 },
@@ -24,30 +60,49 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Unknown priceId: ${priceId}` });
   }
 
-  const now = new Date().toISOString();
-  const body = JSON.stringify({
-    email:              email.toLowerCase().trim(),
-    plan:               plan.plan,
-    images_left:        plan.generations,
-    images_total:       plan.generations,
-    videos_left:        0,
-    videos_total:       0,
-    billing:            "one-time",
-    stripe_customer_id: email.toLowerCase().trim(),
-    activated_at:       now,
-    updated_at:         now,
-  });
+  const headers = {
+    "Content-Type":  "application/json",
+    "apikey":        serviceKey,
+    "Authorization": `Bearer ${serviceKey}`,
+  };
 
-  console.log("[activate] posting to supabase:", `${supabaseUrl}/rest/v1/users`);
+  const cleanEmail = email.toLowerCase().trim();
 
   try {
+    // ── Step 1: Check if user already exists ──────────────────────────────────
+    const existingRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=images_left,images_total`,
+      { headers }
+    );
+    const existing = await existingRes.json();
+    const existingUser = Array.isArray(existing) ? existing[0] : null;
+
+    // ── Step 2: Calculate new balances (ADD credits, don't reset) ─────────────
+    const currentLeft  = existingUser?.images_left  ?? 0;
+    const currentTotal = existingUser?.images_total ?? 0;
+    const newLeft      = currentLeft  + plan.generations;
+    const newTotal     = currentTotal + plan.generations;
+
+    const now = new Date().toISOString();
+    const body = JSON.stringify({
+      email:              cleanEmail,
+      plan:               plan.plan,
+      images_left:        newLeft,
+      images_total:       newTotal,
+      videos_left:        0,
+      videos_total:       0,
+      billing:            "one-time",
+      stripe_customer_id: cleanEmail,
+      activated_at:       now,
+      updated_at:         now,
+    });
+
+    // ── Step 3: Upsert (insert or update on email conflict) ───────────────────
     const sbRes = await fetch(`${supabaseUrl}/rest/v1/users`, {
       method: "POST",
       headers: {
-        "Content-Type":  "application/json",
-        "apikey":        serviceKey,
-        "Authorization": `Bearer ${serviceKey}`,
-        "Prefer":        "resolution=merge-duplicates",
+        ...headers,
+        "Prefer": "resolution=merge-duplicates",
       },
       body,
     });
@@ -59,10 +114,21 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: `Supabase error ${sbRes.status}: ${text}` });
     }
 
-    res.status(200).json({ success: true, email, plan: plan.plan, generations: plan.generations });
+    res.status(200).json({
+      success:     true,
+      email:       cleanEmail,
+      plan:        plan.plan,
+      generations: plan.generations,
+      images_left: newLeft,
+      images_total: newTotal,
+    });
 
   } catch (err) {
     console.error("[activate] fetch error:", err.message);
     res.status(500).json({ error: err.message });
   }
 }
+
+// ── Internal: handle deduct-only requests ─────────────────────────────────────
+// Called by frontend after each generation to keep Supabase in sync
+// Body: { email, deduct, images_left }

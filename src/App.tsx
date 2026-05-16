@@ -139,7 +139,9 @@ export default function App() {
       console.log("[activatePlan] response:", JSON.stringify(data));
       if (!res.ok) throw new Error(data.error);
       setUserTier(data.plan as any);
-      setGenerationsUsed(0);
+      // Calculate used from Supabase values (total - left = used)
+      const used = (data.images_total ?? 0) - (data.images_left ?? 0);
+      setGenerationsUsed(Math.max(0, used));
       setUserEmail(email);
       localStorage.setItem("pinviral_email", email);
     } catch (err: any) {
@@ -254,7 +256,26 @@ export default function App() {
     }
   };
 
-  // ── Generate strategy ────────────────────────────────────────────────────────
+  // ── Deduct credits in Supabase after generation ─────────────────────────────
+  const deductInSupabase = async (amount: number) => {
+    if (!userEmail) return;
+    try {
+      await fetch(`/api/get-user?email=${encodeURIComponent(userEmail)}`)
+        .then(r => r.json())
+        .then(async data => {
+          if (!data.user) return;
+          const newLeft = Math.max(0, (data.user.images_left ?? 0) - amount);
+          await fetch("/api/activate-plan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            // We pass a special "deduct" signal — handled below
+            body: JSON.stringify({ email: userEmail, deduct: amount, images_left: newLeft }),
+          });
+        });
+    } catch { /* non-fatal — local state is source of truth for UX */ }
+  };
+
+    // ── Generate strategy ────────────────────────────────────────────────────────
   const generateStrategy = async () => {
     if (!productName.trim()) return;
     if (generationsLeft < CREATION_COSTS.STRATEGY) {
@@ -294,6 +315,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       setStrategy(data);
       selectAngle(0, data.angles[0]);
       setGenerationsUsed(p => p + CREATION_COSTS.STRATEGY);
+      deductInSupabase(CREATION_COSTS.STRATEGY);
     } catch (err: any) {
       const msg = err.message || "";
       setError(
@@ -351,6 +373,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
 
       setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
       setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
+      deductInSupabase(CREATION_COSTS.IMAGE);
     } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
   };
@@ -1151,11 +1174,13 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 </p>
               </div>
               <div className="space-y-3 mb-8">
-                {[
+                {(() => {
+                  const PRICE_IDS: Record<string, string> = { starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy", pro: "price_1TXDk3B7i0tTYaLUBr36BDko" };
+                  return [
                   { key: "starter" as const, name: "Starter", price: "$24", gens: "50 generations", desc: "Best for beginners" },
                   { key: "pro" as const, name: "Pro", price: "$49", gens: "200 generations", desc: "Best for power sellers" },
-                ].map(plan => (
-                  <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
+                  ].map(plan => (
+                  <button key={plan.key} onClick={() => { setShowUpgradeModal(false); setPendingPriceId(PRICE_IDS[plan.key]); setShowEmailModal(true); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
                       userTier === plan.key
                         ? "bg-rose-50 border-rose-600"
@@ -1172,7 +1197,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       <p className="text-[10px] text-slate-400 font-bold">{plan.gens}</p>
                     </div>
                   </button>
-                ))}
+                  ))
+                })()}
               </div>
               <button onClick={() => setShowUpgradeModal(false)}
                 className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm rounded-2xl transition-all">

@@ -1,7 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-// Support both VITE_STRIPE_SECRET_KEY and STRIPE_SECRET_KEY env var names
 const stripe = new Stripe(
   process.env.STRIPE_SECRET_KEY || process.env.VITE_STRIPE_SECRET_KEY
 );
@@ -52,9 +51,9 @@ export default async function handler(req, res) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const email   = session.customer_details?.email;
-    // priceId may be in metadata OR must be retrieved from line_items
-    let priceId = session.metadata?.priceId;
 
+    // priceId may be in metadata OR retrieved from line_items
+    let priceId = session.metadata?.priceId;
     if (!priceId && session.id) {
       try {
         const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
@@ -67,31 +66,49 @@ export default async function handler(req, res) {
 
     console.log("[webhook] email:", email, "priceId:", priceId);
 
-    const plan = PLAN_CONFIG[priceId];
-
     if (!email) {
       console.error("[webhook] No email in session");
       return res.status(200).json({ received: true });
     }
 
+    const plan = PLAN_CONFIG[priceId];
     if (!plan) {
       console.error("[webhook] Unknown priceId:", priceId);
       return res.status(200).json({ received: true });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
     const now = new Date().toISOString();
+
+    // Fetch existing user so we ADD credits rather than reset
+    const { data: existing } = await supabase
+      .from("users")
+      .select("images_left, images_total, topup_history")
+      .eq("email", cleanEmail)
+      .maybeSingle();
+
+    const currentLeft  = existing?.images_left  ?? 0;
+    const currentTotal = existing?.images_total ?? 0;
+    const newLeft      = currentLeft  + plan.generations;
+    const newTotal     = currentTotal + plan.generations;
+
+    const topupHistory = [
+      ...(existing?.topup_history || []),
+      { date: now, plan: plan.plan, credits: plan.generations },
+    ];
+
     const { error } = await supabase.from("users").upsert(
       {
-        email,
+        email:              cleanEmail,
         plan:               plan.plan,
-        images_left:        plan.generations,
-        images_total:       plan.generations,
+        images_left:        newLeft,
+        images_total:       newTotal,
         videos_left:        0,
         videos_total:       0,
         billing:            "one-time",
-        stripe_customer_id: session.customer || email,
+        stripe_customer_id: session.customer || cleanEmail,
         activated_at:       now,
-        topup_history:      [],
+        topup_history:      topupHistory,
         updated_at:         now,
       },
       { onConflict: "email" }
@@ -102,7 +119,8 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: error.message });
     }
 
-    console.log("[webhook] Activated", plan.plan, "for", email);
+    console.log("[webhook] Activated", plan.plan, "for", cleanEmail,
+      "| added:", plan.generations, "| total left:", newLeft);
   }
 
   res.status(200).json({ received: true });
