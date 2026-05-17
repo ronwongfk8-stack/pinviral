@@ -847,23 +847,30 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     ))}
                   </div>
 
-                  {/* Cloning mode */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["direct","stylized","reimagine","variation"] as const).map(m => (
-                      <button key={m} onClick={() => setCloningMode(m)}
-                        className={cn("py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all tracking-widest capitalize",
-                          cloningMode === m ? "bg-rose-600 border-rose-600 text-white" : "bg-white border-slate-100 text-slate-400 hover:border-rose-200")}>
-                        {m}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Custom prompt */}
+                  {/* 5 Preloaded scene environments */}
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Palette size={10}/> Creative Mode</label>
-                    <textarea value={customVisualPrompt} onChange={e => setCustomVisualPrompt(e.target.value)}
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] text-slate-600 focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 outline-none transition-all h-20 resize-none font-medium"
-                      placeholder="Describe the environment (e.g. 'Marble tabletop', 'Minimalist white studio')..."/>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {[
+                        { id: "marble", emoji: "🏛️", label: "Marble Studio",   desc: "White marble surface, soft professional studio lighting" },
+                        { id: "nature", emoji: "🌿", label: "Nature & Wood",    desc: "Natural wood table, lush greenery, warm natural light" },
+                        { id: "golden", emoji: "🌅", label: "Golden Hour",      desc: "Warm sunset lifestyle setting, bokeh background" },
+                        { id: "minimal",emoji: "⬜", label: "Minimalist White", desc: "Pure white studio, crisp shadows, luxury editorial look" },
+                        { id: "urban",  emoji: "🌆", label: "Urban Luxury",     desc: "Premium urban backdrop, city ambiance, high-end feel" },
+                      ].map(scene => (
+                        <button key={scene.id} onClick={() => setCustomVisualPrompt(scene.desc)}
+                          className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all",
+                            customVisualPrompt === scene.desc
+                              ? "bg-rose-50 border-rose-500 text-rose-700"
+                              : "bg-white border-slate-100 text-slate-500 hover:border-rose-200")}>
+                          <span className="text-lg shrink-0">{scene.emoji}</span>
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-0.5">{scene.label}</p>
+                            <p className="text-[9px] font-medium text-slate-400 leading-tight">{scene.desc}</p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <button onClick={() => generateImage()} disabled={isGeneratingImage}
@@ -903,7 +910,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start", aspectRatio === "9:16" ? "w-full max-w-[360px] aspect-[9/16]" : "w-full max-w-[400px] aspect-[2/3]")}
+                  style={{ aspectRatio: aspectRatio === "9:16" ? "9/16" : "2/3", maxWidth: aspectRatio === "9:16" ? "360px" : "400px" }}
+                  className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
 
