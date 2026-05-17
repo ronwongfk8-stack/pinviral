@@ -1255,7 +1255,7 @@ function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.Cha
     <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
       {imageUrl ? (
         <>
-          <img src={imageUrl} alt="Uploaded product" className="w-full h-full object-cover"/>
+          <img src={imageUrl} alt="Uploaded product" className="w-full h-auto object-contain"/>
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
             <RefreshCw size={28} className="mb-2"/>
             <p className="text-xs font-black uppercase tracking-widest">Change Image</p>
