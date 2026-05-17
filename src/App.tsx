@@ -89,6 +89,11 @@ export default function App() {
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
   const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging]                   = useState(false);
+  const [imgOffset, setImgOffset]                     = useState({ x: 0, y: 0 });
+  const [imgScale, setImgScale]                       = useState(1);
+  const [isImgDragging, setIsImgDragging]             = useState(false);
+  const imgDragStart                                  = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
+  const lastPinchDist                                 = useRef<number | null>(null);
   const [editableHeadline, setEditableHeadline]       = useState("");
   const [editableSubtext, setEditableSubtext]         = useState("");
   const [editableCTA, setEditableCTA]                 = useState("");
@@ -353,6 +358,8 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       if (!data.imageB64) throw new Error("No image returned. Please try again.");
 
       setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
+      setImgOffset({ x: 0, y: 0 });
+      setImgScale(1);
       setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
     } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
@@ -467,6 +474,56 @@ No generic CTAs. Focus on social proof and value proposition.` });
       x: Math.max(-40, Math.min(40, ((cx - rect.left) / rect.width)  * 100 - 50)),
       y: Math.max(-40, Math.min(40, ((cy - rect.top)  / rect.height) * 100 - 50)),
     });
+  };
+
+  // ── Drag/pinch handlers for background image ────────────────────────────────
+  const handleImgMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    imgDragStart.current = { mx: e.clientX, my: e.clientY, ox: imgOffset.x, oy: imgOffset.y };
+    setIsImgDragging(true);
+  };
+  const handleImgMouseMove = (e: React.MouseEvent) => {
+    if (!imgDragStart.current) return;
+    setImgOffset({
+      x: imgDragStart.current.ox + (e.clientX - imgDragStart.current.mx),
+      y: imgDragStart.current.oy + (e.clientY - imgDragStart.current.my),
+    });
+  };
+  const handleImgMouseUp = () => { imgDragStart.current = null; setIsImgDragging(false); };
+
+  const handleImgTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      imgDragStart.current = { mx: e.touches[0].clientX, my: e.touches[0].clientY, ox: imgOffset.x, oy: imgOffset.y };
+      lastPinchDist.current = null;
+    } else if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastPinchDist.current = Math.hypot(dx, dy);
+      imgDragStart.current = null;
+    }
+  };
+  const handleImgTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && imgDragStart.current) {
+      setImgOffset({
+        x: imgDragStart.current.ox + (e.touches[0].clientX - imgDragStart.current.mx),
+        y: imgDragStart.current.oy + (e.touches[0].clientY - imgDragStart.current.my),
+      });
+    } else if (e.touches.length === 2 && lastPinchDist.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      const ratio = dist / lastPinchDist.current;
+      setImgScale(s => Math.min(4, Math.max(0.3, s * ratio)));
+      lastPinchDist.current = dist;
+    }
+  };
+  const handleImgTouchEnd = () => { imgDragStart.current = null; lastPinchDist.current = null; };
+
+  const handleImgWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.92 : 1.08;
+    setImgScale(s => Math.min(4, Math.max(0.3, s * delta)));
   };
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -916,10 +973,34 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   ) : (
                     <>
                       {(generatedImage || uploadedImage) && (
-                        <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                          className="absolute inset-0 w-full h-full select-none pointer-events-none"
-                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover", objectPosition: "center center" }}
-                          referrerPolicy="no-referrer" draggable={false}/>
+                        <div
+                          className="absolute inset-0 overflow-hidden"
+                          style={{ cursor: isImgDragging ? "grabbing" : "grab" }}
+                          onMouseDown={handleImgMouseDown}
+                          onMouseMove={handleImgMouseMove}
+                          onMouseUp={handleImgMouseUp}
+                          onMouseLeave={handleImgMouseUp}
+                          onTouchStart={handleImgTouchStart}
+                          onTouchMove={handleImgTouchMove}
+                          onTouchEnd={handleImgTouchEnd}
+                          onWheel={handleImgWheel}>
+                          <img src={generatedImage || uploadedImage || ""} alt="Pin Design"
+                            className="absolute select-none pointer-events-none"
+                            style={{
+                              display: "block",
+                              width: "100%", height: "100%",
+                              objectFit: "cover",
+                              transform: `translate(${imgOffset.x}px, ${imgOffset.y}px) scale(${imgScale})`,
+                              transformOrigin: "center center",
+                            }}
+                            referrerPolicy="no-referrer" draggable={false}/>
+                          {/* Drag hint shown briefly */}
+                          {(imgScale === 1 && imgOffset.x === 0 && imgOffset.y === 0) && (
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/40 text-white text-[8px] font-bold px-2 py-1 rounded-full pointer-events-none uppercase tracking-widest opacity-60">
+                              drag · scroll to zoom
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {/* Draggable text overlay */}
@@ -975,6 +1056,28 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     <span>Small</span><span>Default</span><span>Large</span>
                   </div>
                 </div>
+
+                {/* ── Image Zoom + Reset ── */}
+                {(generatedImage || uploadedImage) && (
+                  <div className="mt-3 px-1 space-y-1">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Image Zoom</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(imgScale * 100)}%</span>
+                        <button onClick={() => { setImgScale(1); setImgOffset({ x: 0, y: 0 }); }}
+                          className="text-[9px] font-black text-slate-400 hover:text-rose-600 uppercase tracking-widest transition-colors">
+                          Reset
+                        </button>
+                      </div>
+                    </div>
+                    <input type="range" min="0.3" max="3" step="0.01" value={imgScale}
+                      onChange={e => setImgScale(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
+                    <div className="flex justify-between text-[9px] text-slate-300 font-bold">
+                      <span>Shrink</span><span className="italic">Drag image to reposition</span><span>Expand</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Headline / subtext variants — moved above Pinterest */}
                 {selectedAngleIndex !== null && (
