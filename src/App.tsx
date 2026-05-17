@@ -746,11 +746,11 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   ) : (
                     <>
                       <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                        className="w-full h-full object-contain select-none pointer-events-none"
+                        className="w-full h-full object-cover select-none pointer-events-none"
                         referrerPolicy="no-referrer" draggable={false}/>
 
                       {/* Draggable text overlay */}
-                      <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none"
+                      <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none z-20"
                         style={{ transform: `translate(${overlayPosition.x}%, ${overlayPosition.y}%) scale(${overlayScale})` }}>
                         <div className="w-full pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
                           onMouseDown={handleDragStart} onTouchStart={handleDragStart}>

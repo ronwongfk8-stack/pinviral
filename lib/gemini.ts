@@ -77,7 +77,11 @@ export async function geminiImage(prompt: string, imageB64?: string, imageMime?:
 
         if (type === "imagen") {
           // Enforce full product in frame
-          const imgPrompt = prompt + " Show the complete product from top to bottom. Nothing cropped. Full item visible. Wide framing.";
+          // For 9:16 tall format: product must be centered with space above and below
+          const ratioHint = (aspectRatio === "2:3")
+            ? "Compose for 2:3 portrait format. Product centered vertically with margin at top and bottom."
+            : "Compose for 9:16 tall portrait format. Product centered in frame with empty space above and below. Do NOT cut off any part of the product. Show complete product with padding on all sides.";
+          const imgPrompt = prompt + " " + ratioHint + " Full product visible. Nothing cropped. Complete item in frame.";
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${name}:predict?key=${GEMINI_KEY}`,
             { method: "POST", headers: { "Content-Type": "application/json" },
