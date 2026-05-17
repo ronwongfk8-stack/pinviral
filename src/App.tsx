@@ -18,7 +18,6 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { supabase } from "./supabase";
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -84,16 +83,12 @@ export default function App() {
   const [productName, setProductName]               = useState("");
   const [isLoading, setIsLoading]                     = useState(false);
   const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
+  const [isMockMode, setIsMockMode]                   = useState(true);
   const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
   const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
   const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging]                   = useState(false);
-  const [imgOffset, setImgOffset]                     = useState({ x: 0, y: 0 });
-  const [imgScale, setImgScale]                       = useState(1);
-  const [isImgDragging, setIsImgDragging]             = useState(false);
-  const imgDragStart                                  = useRef<{ mx: number; my: number; ox: number; oy: number } | null>(null);
-  const lastPinchDist                                 = useRef<number | null>(null);
   const [editableHeadline, setEditableHeadline]       = useState("");
   const [editableSubtext, setEditableSubtext]         = useState("");
   const [editableCTA, setEditableCTA]                 = useState("");
@@ -102,7 +97,7 @@ export default function App() {
   const [copiedField, setCopiedField]                 = useState<string | null>(null);
   const [error, setError]                             = useState<string | null>(null);
   const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
-  const aspectRatio = "2:3";
+  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [overlayScale, setOverlayScale]             = useState(1);
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
@@ -116,110 +111,13 @@ export default function App() {
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
-  const [showEmailModal, setShowEmailModal]           = useState(false);
-  const [pendingPriceId, setPendingPriceId]           = useState<string | null>(null);
-  const [emailInput, setEmailInput]                   = useState("");
-  const [paymentSuccess, setPaymentSuccess]           = useState(false);
-  const [isLoadingUser, setIsLoadingUser]             = useState(false);
-
   const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
   const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
 
   const previewRef = useRef<HTMLDivElement>(null);
-
-  // ── Force canvas to exact aspect ratio height regardless of flex parent ───────
-  useEffect(() => {
-    const el = previewRef.current;
-    if (!el) return;
-    const apply = () => {
-      const w = el.offsetWidth;
-      el.style.height = (w * 3 / 2) + "px";
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
-
-  // ── Activate plan directly via email + priceId ───────────────────────────────
-  const activatePlan = async (email: string, priceId: string) => {
-    setIsLoadingUser(true);
-    try {
-      const res = await fetch("/api/activate-plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, priceId }),
-      });
-      const data = await res.json();
-      console.log("[activatePlan] response:", JSON.stringify(data));
-      if (!res.ok) throw new Error(data.error);
-      setUserTier(data.plan as any);
-      setGenerationsUsed(0);
-      setUserEmail(email);
-      localStorage.setItem("pinviral_email", email);
-    } catch (err: any) {
-      console.error("[activatePlan] error:", err.message);
-      loadUserFromSupabase(email);
-    } finally {
-      setIsLoadingUser(false);
-    }
-  };
-
-  // ── Load user from Supabase on mount (handles post-payment redirect) ─────────
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const payment   = params.get("payment");
-    const email     = params.get("email");
-    const sessionId = params.get("session_id");
-
-    console.log("[mount] payment:", payment, "email:", email, "sessionId:", sessionId);
-
-    if (payment === "success" && email) {
-      setPaymentSuccess(true);
-      setUserEmail(email);
-      localStorage.setItem("pinviral_email", email);
-      window.history.replaceState({}, "", "/");
-      const priceId = params.get("price_id");
-      console.log("[mount] priceId:", priceId);
-      if (priceId) {
-        activatePlan(email, priceId);
-      } else {
-        console.warn("[mount] No price_id in URL — falling back to Supabase");
-        loadUserFromSupabase(email);
-      }
-    } else {
-      const saved = localStorage.getItem("pinviral_email");
-      if (saved) {
-        setUserEmail(saved);
-        loadUserFromSupabase(saved);
-      }
-    }
-  }, []);
-
-  const loadUserFromSupabase = async (email: string, retries = 0): Promise<void> => {
-    setIsLoadingUser(true);
-    try {
-      const res = await fetch(`/api/get-user?email=${encodeURIComponent(email)}`);
-      if (!res.ok) {
-        if (retries < 6) setTimeout(() => loadUserFromSupabase(email, retries + 1), 2000);
-        return;
-      }
-      const data = await res.json();
-      const user = data.user;
-      if (!user) {
-        if (retries < 6) setTimeout(() => loadUserFromSupabase(email, retries + 1), 2000);
-        return;
-      }
-      localStorage.setItem("pinviral_email", email);
-      setUserEmail(email);
-      setUserTier(user.plan as any);
-      setGenerationsUsed(user.images_total - user.images_left);
-    } catch { /* non-fatal */ }
-    finally { setIsLoadingUser(false); }
-  };
 
   // Auto-fetch social proof when URL is entered
   useEffect(() => {
@@ -236,7 +134,6 @@ export default function App() {
     setEditableHeadline(angle.headlines[0]);
     setEditableSubtext(angle.subtext[0]);
     setEditableCTA(angle.cta);
-    setCustomVisualPrompt(angle.aiImagePrompt || "");
   };
 
   const resetApp = () => {
@@ -251,26 +148,6 @@ export default function App() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
-  };
-
-  // ── Checkout with email ───────────────────────────────────────────────────────
-  const handleProceedToCheckout = async () => {
-    if (!emailInput.includes("@") || !pendingPriceId) return;
-    setShowEmailModal(false);
-    setUserEmail(emailInput);
-    localStorage.setItem("pinviral_email", emailInput);
-    try {
-      const res = await fetch("/api/create-checkout-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId: pendingPriceId, email: emailInput }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      window.location.href = data.url;
-    } catch (err: any) {
-      alert("Payment failed: " + err.message);
-    }
   };
 
   // ── Generate strategy ────────────────────────────────────────────────────────
@@ -294,7 +171,7 @@ For each angle provide:
 2. seoTitle (High-CTR pin title, e.g. "Why Every Home Needs This")
 3. hook (1-line attention grabber)
 4. psychology (emotional trigger explanation)
-5. aiImagePrompt (50-80 word descriptive scene. CRITICAL: The ENTIRE product must be fully visible in the frame — no cropping, no cutting off edges, full product shown from top to bottom with generous padding around it. Product centered, floating or on surface, complete product visible.)
+5. aiImagePrompt (50-80 word descriptive scene)
 6. headlines (exactly 5 punchy variants)
 7. subtext (exactly 3 social-proof lines)
 8. cta
@@ -334,6 +211,17 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       return;
     }
 
+    // Mock / draft mode — zero cost preview
+    if (isMockMode) {
+      setIsGeneratingImage(true);
+      await new Promise(r => setTimeout(r, 1200));
+      setGeneratedImage(
+        (uploadedImage || "") + (uploadedImage?.includes("?") ? "&" : "?") + "mock=" + Date.now()
+      );
+      setIsGeneratingImage(false);
+      return;
+    }
+
     setIsGeneratingImage(true); setError(null);
     try {
       const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
@@ -345,10 +233,9 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       };
       const finalPrompt =
         `${CLONING[cloningMode]} Environment: ${customVisualPrompt || base}. ` +
-        `CRITICAL COMPOSITION RULE: Show the COMPLETE product in full — entire product visible from top to bottom, no cropping, no partial cuts, full object with clear space/padding around all edges. Product must be 100% fully visible in frame. ` +
-        `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic. Wide enough shot to show entire product.`;
+        `Full product visible from top to bottom, nothing cropped, complete item in frame. Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic. Wide enough framing to show entire product.`;
 
-      const payload: any = { prompt: finalPrompt };
+      const payload: any = { prompt: finalPrompt, aspectRatio };
       if (uploadedImage?.startsWith("data:")) {
         payload.imageB64  = uploadedImage.split(",")[1];
         payload.imageMime = uploadedImage.split(";")[0].split(":")[1];
@@ -359,8 +246,6 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       if (!data.imageB64) throw new Error("No image returned. Please try again.");
 
       setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
-      setImgOffset({ x: 0, y: 0 });
-      setImgScale(1);
       setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
     } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
@@ -427,40 +312,10 @@ No generic CTAs. Focus on social proof and value proposition.` });
   const downloadImage = async () => {
     if (!previewRef.current) return;
     try {
-      // Exact Pinterest dimensions: 1000x1500 (9:16) or 1000x1500 (2:3 = 1000x1333)
-      const W = 1000;
-      const H = 1500;
-
-      // Measure the rendered element on screen
-      const rect = previewRef.current.getBoundingClientRect();
-      const scaleX = W / rect.width;
-      const scaleY = H / rect.height;
-
-      const url = await toPng(previewRef.current, {
-        cacheBust: true,
-        pixelRatio: Math.max(scaleX, scaleY),
-        canvasWidth:  W,
-        canvasHeight: H,
-        style: {
-          borderRadius: "0",
-          boxShadow: "none",
-          margin: "0",
-          width:  rect.width  + "px",
-          height: rect.height + "px",
-        },
-      });
-
-      const link = Object.assign(document.createElement("a"), {
-        href: url,
-        download: `pinterest-pin-2-3-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`,
-      });
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error("Download error:", err);
-      setError("Download failed. Right-click the image and select 'Save Image As'.");
-    }
+      const url  = await toPng(previewRef.current, { cacheBust: true, pixelRatio: 3, style: { borderRadius: "0", boxShadow: "none", margin: "0" } });
+      const link = Object.assign(document.createElement("a"), { href: url, download: `pinterest-pin-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png` });
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    } catch { setError("Download failed. Right-click the image and select 'Save Image As'."); }
   };
 
   // ── Drag handlers for text overlay ──────────────────────────────────────────
@@ -477,116 +332,9 @@ No generic CTAs. Focus on social proof and value proposition.` });
     });
   };
 
-  // ── Drag/pinch handlers for background image ────────────────────────────────
-  const handleImgMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    imgDragStart.current = { mx: e.clientX, my: e.clientY, ox: imgOffset.x, oy: imgOffset.y };
-    setIsImgDragging(true);
-  };
-  const handleImgMouseMove = (e: React.MouseEvent) => {
-    if (!imgDragStart.current) return;
-    setImgOffset({
-      x: imgDragStart.current.ox + (e.clientX - imgDragStart.current.mx),
-      y: imgDragStart.current.oy + (e.clientY - imgDragStart.current.my),
-    });
-  };
-  const handleImgMouseUp = () => { imgDragStart.current = null; setIsImgDragging(false); };
-
-  const handleImgTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      imgDragStart.current = { mx: e.touches[0].clientX, my: e.touches[0].clientY, ox: imgOffset.x, oy: imgOffset.y };
-      lastPinchDist.current = null;
-    } else if (e.touches.length === 2) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      lastPinchDist.current = Math.hypot(dx, dy);
-      imgDragStart.current = null;
-    }
-  };
-  const handleImgTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (e.touches.length === 1 && imgDragStart.current) {
-      setImgOffset({
-        x: imgDragStart.current.ox + (e.touches[0].clientX - imgDragStart.current.mx),
-        y: imgDragStart.current.oy + (e.touches[0].clientY - imgDragStart.current.my),
-      });
-    } else if (e.touches.length === 2 && lastPinchDist.current !== null) {
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.hypot(dx, dy);
-      const ratio = dist / lastPinchDist.current;
-      setImgScale(s => Math.min(4, Math.max(0.3, s * ratio)));
-      lastPinchDist.current = dist;
-    }
-  };
-  const handleImgTouchEnd = () => { imgDragStart.current = null; lastPinchDist.current = null; };
-
-  const handleImgWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.92 : 1.08;
-    setImgScale(s => Math.min(4, Math.max(0.3, s * delta)));
-  };
-
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#fafafa] text-slate-900 font-sans selection:bg-rose-100 selection:text-rose-600">
-
-      {/* ── Payment Success Banner ───────────────────────────────────────────── */}
-      <AnimatePresence>
-        {paymentSuccess && (
-          <motion.div initial={{ opacity: 0, y: -40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -40 }}
-            className="fixed top-0 left-0 right-0 z-[200] bg-emerald-500 text-white px-4 py-3 flex items-center justify-center gap-3 shadow-lg">
-            {isLoadingUser
-              ? <Loader2 size={18} className="shrink-0 animate-spin"/>
-              : <Check size={18} className="shrink-0"/>}
-            <span className="font-black text-sm">
-              {isLoadingUser
-                ? `⏳ Payment received! Activating your plan for ${userEmail}...`
-                : `🎉 Activated! Welcome to ${TIER_NAMES[userTier]} — ${TIER_LIMITS[userTier]} generations ready for ${userEmail}`}
-            </span>
-            <button onClick={() => setPaymentSuccess(false)} className="ml-4 text-white/80 hover:text-white text-lg leading-none">×</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Email Modal (shown before checkout) ─────────────────────────────── */}
-      <AnimatePresence>
-        {showEmailModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => setShowEmailModal(false)}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl"
-              onClick={e => e.stopPropagation()}>
-              <div className="text-center mb-6">
-                <div className="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Crown size={28} className="text-rose-600"/>
-                </div>
-                <h3 className="text-2xl font-black text-slate-900 mb-2">Enter Your Email</h3>
-                <p className="text-slate-500 text-sm font-medium">We'll use this to activate your credits after payment.</p>
-              </div>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                className="w-full px-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none text-slate-700 font-bold mb-4"
-                value={emailInput}
-                onChange={e => setEmailInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && handleProceedToCheckout()}
-                autoFocus
-              />
-              <button
-                onClick={handleProceedToCheckout}
-                disabled={!emailInput.includes("@")}
-                className="w-full py-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black rounded-2xl transition-all">
-                Continue to Payment →
-              </button>
-              <button onClick={() => setShowEmailModal(false)} className="w-full mt-3 py-3 text-slate-400 text-sm font-bold hover:text-slate-600 transition-all">
-                Cancel
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
@@ -770,6 +518,14 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       <p className="text-[9px] text-rose-500 font-bold italic">Swapping angles is free &amp; instant</p>
                     </div>
                     <div className="flex items-center gap-3">
+                      {/* Draft mode toggle */}
+                      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg" title="Draft mode: preview without using API credits">
+                        <span className={cn("text-[9px] font-black px-2 uppercase tracking-tight", isMockMode ? "text-emerald-600" : "text-slate-400")}>Draft</span>
+                        <button onClick={() => setIsMockMode(v => !v)}
+                          className={cn("w-8 h-4 rounded-full transition-all relative", isMockMode ? "bg-emerald-500" : "bg-slate-300")}>
+                          <div className={cn("absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all", isMockMode ? "right-0.5" : "left-0.5")}/>
+                        </button>
+                      </div>
                       {/* Angle number pills */}
                       <div className="flex gap-1.5">
                         {[0,1,2,3,4].map(i => (
@@ -895,28 +651,53 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 <div className="space-y-6 pt-6 border-t border-slate-100">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Visual Customizer</label>
 
-
-
-                  {/* Scene environment auto-derived from selected angle */}
-                  {selectedAngleIndex !== null && strategy?.angles[selectedAngleIndex]?.aiImagePrompt && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
-                      <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
-                          {strategy.angles[selectedAngleIndex].aiImagePrompt}
-                        </p>
-                      </div>
-                      <p className="text-[9px] text-slate-300 font-bold italic ml-1">Auto-set from selected angle · 100% product identity preserved</p>
+                  {/* Scale slider */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Overlay Size</span>
+                      <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(overlayScale * 100)}%</span>
                     </div>
-                  )}
+                    <input type="range" min="0.4" max="1.6" step="0.01" value={overlayScale} onChange={e => setOverlayScale(parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
+                  </div>
+
+                  {/* Aspect ratio */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ id:"9:16", label:"9:16 vertical" },{ id:"2:3", label:"2:3 classic" }].map(r => (
+                      <button key={r.id} onClick={() => setAspectRatio(r.id as any)}
+                        className={cn("py-2.5 rounded-xl border-2 text-[10px] font-black uppercase transition-all tracking-widest",
+                          aspectRatio === r.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-50 text-slate-300")}>
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Cloning mode */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["direct","stylized","reimagine","variation"] as const).map(m => (
+                      <button key={m} onClick={() => setCloningMode(m)}
+                        className={cn("py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all tracking-widest capitalize",
+                          cloningMode === m ? "bg-rose-600 border-rose-600 text-white" : "bg-white border-slate-100 text-slate-400 hover:border-rose-200")}>
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Custom prompt */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 flex items-center gap-2"><Palette size={10}/> Creative Mode</label>
+                    <textarea value={customVisualPrompt} onChange={e => setCustomVisualPrompt(e.target.value)}
+                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl text-[11px] text-slate-600 focus:ring-4 focus:ring-rose-500/10 focus:border-rose-500 outline-none transition-all h-20 resize-none font-medium"
+                      placeholder="Describe the environment (e.g. 'Marble tabletop', 'Minimalist white studio')..."/>
+                  </div>
 
                   <button onClick={() => generateImage()} disabled={isGeneratingImage}
                     className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60">
                     {isGeneratingImage ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
-                    Regenerate Visual Identity
+                    {isMockMode ? "Preview Visual (Draft)" : "Regenerate Visual Identity"}
                   </button>
                   <p className="text-[9px] text-slate-400 text-center font-bold italic">
-                    Uses 1 generation · {generationsLeft} remaining · Matches selected angle
+                    {isMockMode ? "Draft mode is free -- toggle off to use real AI credits." : `Uses 1 generation. ${generationsLeft} remaining.`}
                   </p>
                 </div>
 
@@ -929,7 +710,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
             {/* Right: main visual workspace */}
             <div className="lg:col-span-7 space-y-6">
-              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 flex flex-col">
+              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 min-h-[750px] flex flex-col">
                 <div className="flex items-center justify-between mb-8">
                   <div className="flex items-center gap-4">
                     <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
@@ -947,8 +728,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  style={{ aspectRatio: "2/3", maxWidth: "360px" }}
-                  className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
+                  className={cn("bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)]",
+                    aspectRatio === "9:16" ? "max-w-[400px] aspect-[9/16]" : "max-w-[450px] aspect-[2/3]")}
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
 
@@ -964,36 +745,9 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     </div>
                   ) : (
                     <>
-                      {(generatedImage || uploadedImage) && (
-                        <div
-                          className="absolute inset-0 overflow-hidden"
-                          style={{ cursor: isImgDragging ? "grabbing" : "grab" }}
-                          onMouseDown={handleImgMouseDown}
-                          onMouseMove={handleImgMouseMove}
-                          onMouseUp={handleImgMouseUp}
-                          onMouseLeave={handleImgMouseUp}
-                          onTouchStart={handleImgTouchStart}
-                          onTouchMove={handleImgTouchMove}
-                          onTouchEnd={handleImgTouchEnd}
-                          onWheel={handleImgWheel}>
-                          <img src={generatedImage || uploadedImage || ""} alt="Pin Design"
-                            className="absolute select-none pointer-events-none"
-                            style={{
-                              display: "block",
-                              width: "100%", height: "100%",
-                              objectFit: "cover",
-                              transform: `translate(${imgOffset.x}px, ${imgOffset.y}px) scale(${imgScale})`,
-                              transformOrigin: "center center",
-                            }}
-                            referrerPolicy="no-referrer" draggable={false}/>
-                          {/* Drag hint shown briefly */}
-                          {(imgScale === 1 && imgOffset.x === 0 && imgOffset.y === 0) && (
-                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/40 text-white text-[8px] font-bold px-2 py-1 rounded-full pointer-events-none uppercase tracking-widest opacity-60">
-                              drag · scroll to zoom
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
+                        className="w-full h-full object-contain select-none pointer-events-none"
+                        referrerPolicy="no-referrer" draggable={false}/>
 
                       {/* Draggable text overlay */}
                       <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none"
@@ -1035,26 +789,10 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   )}
                 </div>
 
-                {/* ── Text Overlay Size slider — below preview ── */}
-                <div className="mt-4 px-1 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Overlay Size</span>
-                    <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(overlayScale * 100)}%</span>
-                  </div>
-                  <input type="range" min="0.4" max="1.6" step="0.01" value={overlayScale}
-                    onChange={e => setOverlayScale(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
-                  <div className="flex justify-between text-[9px] text-slate-300 font-bold">
-                    <span>Small</span><span>Default</span><span>Large</span>
-                  </div>
-                </div>
-
-
-
-                {/* Headline / subtext variants — moved above Pinterest */}
+                {/* Headline / subtext variants */}
                 {selectedAngleIndex !== null && (
-                  <div className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100">
-                    <div className="space-y-3">
+                  <div className="mt-auto pt-10 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-slate-100">
+                    <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
                         <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
@@ -1069,7 +807,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
                       <div className="flex flex-wrap gap-2">
                         {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
@@ -1084,76 +822,39 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                 )}
 
-                {/* ── Pinterest link + Generate This Video section ── */}
-                {selectedAngleIndex !== null && (
-                  <div className="mt-4 space-y-3">
-
-                    {/* Pinterest — plain direct link */}
-                    <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer"
-                      className="w-full flex items-center justify-center gap-2 py-3 bg-[#E60023] hover:bg-[#c0001d] text-white font-black text-[11px] rounded-2xl uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-red-100">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                      Open Pinterest
-                    </a>
-
-                    {/* Generate This Video section */}
-                    <div className="border border-slate-100 rounded-2xl p-4 space-y-3 bg-slate-50/50">
+                {/* Video storyboard */}
+                {selectedAngleIndex !== null && strategy.angles[selectedAngleIndex].videoPrompts?.length > 0 && (
+                  <div className="mt-12 pt-12 border-t border-slate-100 space-y-8">
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                       <div>
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-[8px] font-black bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">Recommended AI Stack</span>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600"><Sparkles size={18}/></div>
+                          <h3 className="text-xl font-black text-slate-900 tracking-tight">Viral Video Storyboard</h3>
                         </div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Viral Content Creation Engines</p>
+                        <p className="text-slate-400 text-sm font-medium">5 AI-optimized scripts for high-converting video Pins.</p>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Vid AI card */}
-                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-black text-slate-900">Vid AI</span>
-                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                            </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                      {strategy.angles[selectedAngleIndex].videoPrompts.map((prompt, i) => (
+                        <div key={i} className="group flex gap-4 p-5 bg-white border border-slate-100 rounded-[2rem] hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-50/50 transition-all">
+                          <div className="flex flex-col items-center gap-2 shrink-0">
+                            <div className="w-8 h-8 bg-slate-50 group-hover:bg-indigo-500 rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 group-hover:text-white transition-all">{i+1}</div>
+                            <div className="w-px flex-1 bg-slate-100 group-hover:bg-indigo-100 transition-all"/>
                           </div>
-                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Video Generation</p>
-                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Turn your viral prompt into high-retention clips for TikTok & Reels.</p>
-                        </div>
-                        {/* Submagic card */}
-                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-black text-slate-900">Submagic</span>
-                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                          <div className="space-y-2 py-1 flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest group-hover:text-indigo-400 transition-colors">Scene Script</span>
+                              <button onClick={() => copyToClipboard(prompt, `video-${i}`)} className="text-slate-200 hover:text-indigo-600 transition-colors">
+                                {copiedField === `video-${i}` ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
+                              </button>
                             </div>
+                            <p className="text-xs text-slate-600 font-bold leading-relaxed">{prompt}</p>
                           </div>
-                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Caption Architect</p>
-                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Add viral captions, b-roll & sound effects automatically.</p>
                         </div>
-                      </div>
-
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Export & Start Generating</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        <button
-                          onClick={() => {
-                            const prompt = strategy.angles[selectedAngleIndex]?.aiImagePrompt || editableHeadline || productName;
-                            navigator.clipboard.writeText(prompt);
-                            window.open("https://vid.ai/?ref=wong44", "_blank");
-                          }}
-                          className="w-full py-3 bg-slate-900 hover:bg-slate-700 text-white font-black text-[9px] rounded-xl uppercase tracking-widest transition-all active:scale-95">
-                          Copy Prompt &amp; Open Vid AI
-                        </button>
-                        <button
-                          onClick={() => {
-                            const script = strategy.angles[selectedAngleIndex]?.pinDescription || editableSubtext || productName;
-                            navigator.clipboard.writeText(script);
-                            window.open("https://submagic.co/?via=wong86", "_blank");
-                          }}
-                          className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 font-black text-[9px] rounded-xl border-2 border-slate-200 uppercase tracking-widest transition-all active:scale-95">
-                          Copy Script &amp; Open Submagic
-                        </button>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 )}
-
 
                 {error && (
                   <div className="mt-6 flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
@@ -1211,7 +912,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="free" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
               <PricingCard 
                 tier="Starter" 
@@ -1229,7 +929,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="starter" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
               <PricingCard 
                 tier="Pro" 
@@ -1249,7 +948,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 tierKey="pro" 
                 currentTier={userTier} 
                 onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
             </div>
           </div>
@@ -1330,7 +1028,7 @@ function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.Cha
     <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
       {imageUrl ? (
         <>
-          <img src={imageUrl} alt="Uploaded product" className="w-full h-auto object-contain"/>
+          <img src={imageUrl} alt="Uploaded product" className="w-full h-full object-cover"/>
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
             <RefreshCw size={28} className="mb-2"/>
             <p className="text-xs font-black uppercase tracking-widest">Change Image</p>
@@ -1358,20 +1056,46 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
+function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect }: any) {
   const [loading, setLoading] = useState(false);
-
+  
   const PRICE_IDS: Record<string, string> = {
-    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
-    pro:     "price_1TXDk3B7i0tTYaLUBr36BDko",
+    starter: "price_price_1TXDjcB7i0tTYaLUodi6N2Zy",
+    pro: "price_1TXDk3B7i0tTYaLUBr36BDko",
   };
 
-  function handleBuy() {
-    if (tierKey === "free") { onSelect("free"); return; }
-    const priceId = PRICE_IDS[tierKey];
-    if (!priceId) { alert("Price not configured for this plan."); return; }
-    // Open email modal in parent, passing priceId
-    onRequestCheckout(priceId);
+  async function handleBuy() {
+    if (tierKey === "free") {
+      onSelect("free");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          priceId: PRICE_IDS[tierKey],
+          userId: 'anonymous'
+        }),
+      });
+      
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        throw new Error(`Server error: ${res.status} - ${text.slice(0, 100)}`);
+      }
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+      
+      window.location.href = data.url;
+    } catch (err: any) {
+      alert('Payment failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const isCurrent = currentTier === tierKey;

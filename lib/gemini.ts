@@ -66,7 +66,7 @@ const IMAGE_MODELS = [
   { name: "imagen-4.0-fast-generate-001",   type: "imagen" },
 ];
 
-export async function geminiImage(prompt: string, imageB64?: string, imageMime?: string): Promise<string> {
+export async function geminiImage(prompt: string, imageB64?: string, imageMime?: string, aspectRatio?: string): Promise<string> {
   const GEMINI_KEY = getKey();
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set in Vercel environment variables");
 
@@ -76,10 +76,18 @@ export async function geminiImage(prompt: string, imageB64?: string, imageMime?:
         let b64: string | null = null;
 
         if (type === "imagen") {
+          // Enforce full product in frame
+          const imgPrompt = prompt + " Show the complete product from top to bottom. Nothing cropped. Full item visible. Wide framing.";
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${name}:predict?key=${GEMINI_KEY}`,
             { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ instances: [{ prompt }], parameters: { sampleCount: 1, aspectRatio: "2:3" } }) }
+              body: JSON.stringify({
+                instances: [{ prompt: imgPrompt }],
+                parameters: {
+                  sampleCount: 1,
+                  aspectRatio: aspectRatio === "2:3" ? "2:3" : "9:16",
+                }
+              }) }
           );
           if (res.ok) { const d = await res.json(); b64 = d?.predictions?.[0]?.bytesBase64Encoded || null; }
           else { if (res.status === 429) throw new Error("Quota exceeded"); if (res.status === 503 && att < 2) { await sleep(3000*(att+1)); continue; } break; }
