@@ -317,7 +317,8 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       );
     } finally { setIsLoading(false); }
   };
-// ── Generate image → /api/image ──────────────────────────────────────────────
+
+  // ── Generate image → /api/image ──────────────────────────────────────────────
   const generateImage = async (currentStrategy?: PinStrategy) => {
     const active = currentStrategy || strategy;
     if (!active || selectedAngleIndex === null) return;
@@ -331,18 +332,17 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     setIsGeneratingImage(true); setError(null);
     try {
       const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
-      
-      // Kept clean prompt construction without cloning mode strings!
+      const CLONING = {
+        direct:    "[IDENTICAL CLONE] Product shape, logo, color, branding 100% identical. Premium setting.",
+        stylized:  "[STYLIZED] Core product identity maintained, artistic/editorial environment.",
+        reimagine: "[REIMAGINE] Product as central element in a completely new conceptual context.",
+        variation: "[VARIATION] Subtle changes: new colorway or material finish.",
+      };
       const finalPrompt =
-        `Environment: ${customVisualPrompt || base}. ` +
+        `${CLONING[cloningMode]} Environment: ${customVisualPrompt || base}. ` +
         `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
 
-      // CRITICAL FIX: Include the aspect ratio variable state here
-      const payload: any = { 
-        prompt: finalPrompt,
-        aspectRatio: aspectRatio 
-      };
-      
+      const payload: any = { prompt: finalPrompt };
       if (uploadedImage?.startsWith("data:")) {
         payload.imageB64  = uploadedImage.split(",")[1];
         payload.imageMime = uploadedImage.split(";")[0].split(":")[1];
@@ -644,6 +644,92 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 <ImageUpload onImageUpload={handleImageUpload} imageUrl={uploadedImage}/>
               </div>
             </div>
+
+            {/* ── Live preview: appears as soon as image is uploaded ── */}
+            {uploadedImage && !strategy && (
+              <div className="border-t border-slate-100 pt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live Pin Preview</label>
+                  {productUrl && !isAnalyzingImage && (
+                    <button
+                      onClick={() => analyzeUploadedImage(uploadedImage, productUrl)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-[9px] font-black rounded-lg uppercase tracking-widest transition-all active:scale-95">
+                      <Search size={10}/> Fetch Social Proof
+                    </button>
+                  )}
+                  {isAnalyzingImage && (
+                    <span className="flex items-center gap-1 text-[9px] font-black text-violet-500 animate-pulse">
+                      <Loader2 size={9} className="animate-spin"/> Fetching...
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-4 items-start">
+                  {/* Mini canvas preview */}
+                  <div className="relative rounded-2xl overflow-hidden flex-shrink-0 bg-white shadow-lg"
+                    style={{ width: "160px", aspectRatio: "9/16" }}>
+                    <img src={uploadedImage} alt="Preview"
+                      style={{ display:"block", width:"100%", height:"100%", objectFit:"cover", objectPosition:"center top" }}/>
+                    {/* Overlay — shows once social proof / headline is available */}
+                    {(editableHeadline || socialProof) && (
+                      <div className="absolute inset-0 flex flex-col justify-end p-2 bg-gradient-to-t from-black/70 via-black/20 to-transparent">
+                        {editableHeadline && (
+                          <p className="text-white font-black text-[8px] uppercase italic leading-tight [text-shadow:0_2px_8px_rgba(0,0,0,0.9)] mb-1">
+                            {editableHeadline}
+                          </p>
+                        )}
+                        {editableSubtext && (
+                          <p className="text-white/80 font-bold text-[7px] uppercase leading-tight mb-1">
+                            {editableSubtext}
+                          </p>
+                        )}
+                        {socialProof?.stars && (
+                          <div className="flex items-center gap-1 mb-1">
+                            <div className="flex gap-0.5">
+                              {[1,2,3].map(i=><div key={i} className="w-2 h-2 rounded-full bg-rose-500"/>)}
+                            </div>
+                            <span className="text-[6px] font-black text-white">{socialProof.stars}★ · {socialProof.reviews}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {!(editableHeadline || socialProof) && (
+                      <div className="absolute bottom-2 left-0 right-0 text-center">
+                        <p className="text-[7px] font-black text-white/60 uppercase tracking-widest">
+                          {productUrl ? "Fetch proof for overlay" : "Overlay after strategy"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  {/* Status info */}
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500"/>
+                      <p className="text-[10px] font-black text-slate-600">Image ready</p>
+                    </div>
+                    {socialProof?.stars ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500"/>
+                        <p className="text-[10px] font-black text-emerald-600">{socialProof.stars}★ · {socialProof.reviews} found</p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-slate-200"/>
+                        <p className="text-[10px] font-bold text-slate-400">Paste URL → Fetch Social Proof for overlay</p>
+                      </div>
+                    )}
+                    {editableHeadline && (
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500"/>
+                        <p className="text-[10px] font-black text-slate-600">Overlay ready</p>
+                      </div>
+                    )}
+                    <p className="text-[9px] text-slate-300 font-bold italic">
+                      Generate 5 angles to unlock full AI visual
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Generation usage label */}
             <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
