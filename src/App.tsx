@@ -130,7 +130,7 @@ export default function App() {
     if (!el) return;
     const apply = () => {
       const w = el.offsetWidth;
-      el.style.height = (aspectRatio === "9:16" ? (w * 16 / 9) : (w * 3 / 2)) + "px";
+      el.style.height = (aspectRatio === "9:16" ? (w * 3 / 2) : (w * 4 / 3)) + "px";
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -898,7 +898,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  style={{ aspectRatio: aspectRatio === "9:16" ? "9/16" : "2/3", maxWidth: aspectRatio === "9:16" ? "360px" : "400px" }}
+                  style={{ aspectRatio: aspectRatio === "9:16" ? "2/3" : "3/4", maxWidth: aspectRatio === "9:16" ? "360px" : "400px" }}
                   className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
@@ -918,7 +918,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       {(generatedImage || uploadedImage) && (
                         <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
                           className="absolute inset-0 w-full h-full select-none pointer-events-none"
-                          style={{ display: "block", width: "100%", height: "100%", objectFit: generatedImage ? "cover" : "contain", objectPosition: "center center" }}
+                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover", objectPosition: "center center" }}
                           referrerPolicy="no-referrer" draggable={false}/>
                       )}
 
