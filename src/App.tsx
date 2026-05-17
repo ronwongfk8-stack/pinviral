@@ -918,7 +918,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       {(generatedImage || uploadedImage) && (
                         <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
                           className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+                          style={{ display: "block", width: "100%", height: "100%", objectFit: "contain", background: "#fff" }}
                           referrerPolicy="no-referrer" draggable={false}/>
                       )}
 
