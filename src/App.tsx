@@ -231,6 +231,7 @@ export default function App() {
     setEditableHeadline(angle.headlines[0]);
     setEditableSubtext(angle.subtext[0]);
     setEditableCTA(angle.cta);
+    setCustomVisualPrompt(angle.aiImagePrompt || "");
   };
 
   const resetApp = () => {
@@ -847,31 +848,18 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     ))}
                   </div>
 
-                  {/* 5 Preloaded scene environments */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {[
-                        { id: "marble", emoji: "🏛️", label: "Marble Studio",   desc: "White marble surface, soft professional studio lighting" },
-                        { id: "nature", emoji: "🌿", label: "Nature & Wood",    desc: "Natural wood table, lush greenery, warm natural light" },
-                        { id: "golden", emoji: "🌅", label: "Golden Hour",      desc: "Warm sunset lifestyle setting, bokeh background" },
-                        { id: "minimal",emoji: "⬜", label: "Minimalist White", desc: "Pure white studio, crisp shadows, luxury editorial look" },
-                        { id: "urban",  emoji: "🌆", label: "Urban Luxury",     desc: "Premium urban backdrop, city ambiance, high-end feel" },
-                      ].map(scene => (
-                        <button key={scene.id} onClick={() => setCustomVisualPrompt(scene.desc)}
-                          className={cn("w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 text-left transition-all",
-                            customVisualPrompt === scene.desc
-                              ? "bg-rose-50 border-rose-500 text-rose-700"
-                              : "bg-white border-slate-100 text-slate-500 hover:border-rose-200")}>
-                          <span className="text-lg shrink-0">{scene.emoji}</span>
-                          <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-0.5">{scene.label}</p>
-                            <p className="text-[9px] font-medium text-slate-400 leading-tight">{scene.desc}</p>
-                          </div>
-                        </button>
-                      ))}
+                  {/* Scene environment auto-derived from selected angle */}
+                  {selectedAngleIndex !== null && strategy?.angles[selectedAngleIndex]?.aiImagePrompt && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
+                      <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
+                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
+                          {strategy.angles[selectedAngleIndex].aiImagePrompt}
+                        </p>
+                      </div>
+                      <p className="text-[9px] text-slate-300 font-bold italic ml-1">Auto-set from selected angle · 100% product identity preserved</p>
                     </div>
-                  </div>
+                  )}
 
                   <button onClick={() => generateImage()} disabled={isGeneratingImage}
                     className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60">
@@ -927,9 +915,12 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     </div>
                   ) : (
                     <>
-                      <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                        className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                        referrerPolicy="no-referrer" draggable={false}/>
+                      {(generatedImage || uploadedImage) && (
+                        <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
+                          className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
+                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+                          referrerPolicy="no-referrer" draggable={false}/>
+                      )}
 
                       {/* Draggable text overlay */}
                       <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none"
