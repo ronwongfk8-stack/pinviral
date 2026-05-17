@@ -317,8 +317,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       );
     } finally { setIsLoading(false); }
   };
-
-  // ── Generate image → /api/image ──────────────────────────────────────────────
+// ── Generate image → /api/image ──────────────────────────────────────────────
   const generateImage = async (currentStrategy?: PinStrategy) => {
     const active = currentStrategy || strategy;
     if (!active || selectedAngleIndex === null) return;
@@ -332,17 +331,18 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     setIsGeneratingImage(true); setError(null);
     try {
       const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
-      const CLONING = {
-        direct:    "[IDENTICAL CLONE] Product shape, logo, color, branding 100% identical. Premium setting.",
-        stylized:  "[STYLIZED] Core product identity maintained, artistic/editorial environment.",
-        reimagine: "[REIMAGINE] Product as central element in a completely new conceptual context.",
-        variation: "[VARIATION] Subtle changes: new colorway or material finish.",
-      };
+      
+      // Kept clean prompt construction without cloning mode strings!
       const finalPrompt =
-        `${CLONING[cloningMode]} Environment: ${customVisualPrompt || base}. ` +
+        `Environment: ${customVisualPrompt || base}. ` +
         `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
 
-      const payload: any = { prompt: finalPrompt };
+      // CRITICAL FIX: Include the aspect ratio variable state here
+      const payload: any = { 
+        prompt: finalPrompt,
+        aspectRatio: aspectRatio 
+      };
+      
       if (uploadedImage?.startsWith("data:")) {
         payload.imageB64  = uploadedImage.split(",")[1];
         payload.imageMime = uploadedImage.split(";")[0].split(":")[1];
