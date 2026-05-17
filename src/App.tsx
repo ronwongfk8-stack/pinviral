@@ -102,7 +102,7 @@ export default function App() {
   const [copiedField, setCopiedField]                 = useState<string | null>(null);
   const [error, setError]                             = useState<string | null>(null);
   const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
-  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
+  const aspectRatio = "2:3";
   const [overlayScale, setOverlayScale]             = useState(1);
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
@@ -135,13 +135,13 @@ export default function App() {
     if (!el) return;
     const apply = () => {
       const w = el.offsetWidth;
-      el.style.height = (aspectRatio === "9:16" ? (w * 3 / 2) : (w * 4 / 3)) + "px";
+      el.style.height = (w * 3 / 2) + "px";
     };
     apply();
     const ro = new ResizeObserver(apply);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [aspectRatio]);
+  }, []);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // ── Activate plan directly via email + priceId ───────────────────────────────
@@ -429,7 +429,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
     try {
       // Exact Pinterest dimensions: 1000x1500 (9:16) or 1000x1500 (2:3 = 1000x1333)
       const W = 1000;
-      const H = aspectRatio === "9:16" ? 1500 : 1333;
+      const H = 1500;
 
       // Measure the rendered element on screen
       const rect = previewRef.current.getBoundingClientRect();
@@ -452,7 +452,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
       const link = Object.assign(document.createElement("a"), {
         href: url,
-        download: `pinterest-pin-${aspectRatio.replace(":","-")}-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`,
+        download: `pinterest-pin-2-3-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`,
       });
       document.body.appendChild(link);
       link.click();
@@ -895,16 +895,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 <div className="space-y-6 pt-6 border-t border-slate-100">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Visual Customizer</label>
 
-                  {/* Aspect ratio */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ id:"9:16", label:"9:16 vertical" },{ id:"2:3", label:"2:3 classic" }].map(r => (
-                      <button key={r.id} onClick={() => setAspectRatio(r.id as any)}
-                        className={cn("py-2.5 rounded-xl border-2 text-[10px] font-black uppercase transition-all tracking-widest",
-                          aspectRatio === r.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-50 text-slate-300")}>
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
+
 
                   {/* Scene environment auto-derived from selected angle */}
                   {selectedAngleIndex !== null && strategy?.angles[selectedAngleIndex]?.aiImagePrompt && (
@@ -956,7 +947,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
                 {/* Pin canvas */}
                 <div ref={previewRef}
-                  style={{ aspectRatio: aspectRatio === "9:16" ? "2/3" : "3/4", maxWidth: aspectRatio === "9:16" ? "360px" : "400px" }}
+                  style={{ aspectRatio: "2/3", maxWidth: "360px" }}
                   className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
                   onMouseMove={handleDrag} onTouchMove={handleDrag}
                   onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
@@ -1058,27 +1049,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                 </div>
 
-                {/* ── Image Zoom + Reset ── */}
-                {(generatedImage || uploadedImage) && (
-                  <div className="mt-3 px-1 space-y-1">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Image Zoom</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(imgScale * 100)}%</span>
-                        <button onClick={() => { setImgScale(1); setImgOffset({ x: 0, y: 0 }); }}
-                          className="text-[9px] font-black text-slate-400 hover:text-rose-600 uppercase tracking-widest transition-colors">
-                          Reset
-                        </button>
-                      </div>
-                    </div>
-                    <input type="range" min="0.3" max="3" step="0.01" value={imgScale}
-                      onChange={e => setImgScale(parseFloat(e.target.value))}
-                      className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
-                    <div className="flex justify-between text-[9px] text-slate-300 font-bold">
-                      <span>Shrink</span><span className="italic">Drag image to reposition</span><span>Expand</span>
-                    </div>
-                  </div>
-                )}
+
 
                 {/* Headline / subtext variants — moved above Pinterest */}
                 {selectedAngleIndex !== null && (
