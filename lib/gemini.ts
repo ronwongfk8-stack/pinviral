@@ -45,7 +45,10 @@ export async function geminiText(
         const msg = errData?.error?.message || `HTTP ${res.status}`;
         if (res.status === 401 || res.status === 403) throw new Error("Invalid Gemini API key: " + msg);
         if (res.status === 429) throw new Error("Gemini quota exceeded. Please wait a minute.");
-        if (res.status === 503) { if (attempt < 2) { await sleep(3000 * (attempt + 1)); continue; } break; }
+        if (res.status === 503) {
+          if (attempt < 2) { await sleep(3000 * (attempt + 1)); continue; }
+          break;
+        }
         break;
       } catch (e: any) {
         const msg = e.message || "";
@@ -58,65 +61,66 @@ export async function geminiText(
   throw new Error("AI temporarily unavailable. Please try again.");
 }
 
-const IMAGE_MODELS = [
-  { name: "imagen-4.0-generate-001",        type: "imagen" },
-  { name: "gemini-2.5-flash-image",         type: "gemini" },
-  { name: "gemini-3.1-flash-image-preview", type: "gemini" },
-  { name: "gemini-3-pro-image-preview",     type: "gemini" },
-  { name: "imagen-4.0-fast-generate-001",   type: "imagen" },
-];
-
-export async function geminiImage(prompt: string, imageB64?: string, imageMime?: string, aspectRatio?: string): Promise<string> {
+export async function geminiImage(
+  prompt: string,
+  imageB64?: string,
+  imageMime?: string,
+  aspectRatio?: string
+): Promise<string> {
   const GEMINI_KEY = getKey();
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set in Vercel environment variables");
 
-  for (const { name, type } of IMAGE_MODELS) {
+  // Map incoming layout selection into the Gemini API enum format
+  let geminiAspectRatio = "AR_1_1"; 
+  if (aspectRatio === "9:16") {
+    geminiAspectRatio = "AR_9_16";
+  } else if (aspectRatio === "2:3") {
+    geminiAspectRatio = "AR_2_3";
+  }
+
+  let b64 = "";
+  for (const name of MODELS) {
     for (let att = 0; att < 3; att++) {
       try {
-        let b64: string | null = null;
+        const parts: any[] = [{ text: prompt }];
+        if (imageB64 && imageMime) parts.push({ inlineData: { data: imageB64, mimeType: imageMime } });
+        
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${name}:generateContent?key=${GEMINI_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts }],
+              generationConfig: {
+                responseModalities: ["TEXT", "IMAGE"],
+                aspectRatio: geminiAspectRatio // Explicit dimension pass
+              }
+            })
+          }
+        );
 
-        if (type === "imagen") {
-          // Enforce full product in frame
-          const imgPrompt = prompt + " Show the complete product from top to bottom. Nothing cropped. Full item visible. Wide framing.";
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${name}:predict?key=${GEMINI_KEY}`,
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                instances: [{ prompt: imgPrompt }],
-                parameters: {
-                  sampleCount: 1,
-                  aspectRatio: aspectRatio === "2:3" ? "2:3" : "9:16",
-                }
-              }) }
-          );
-          if (res.ok) { const d = await res.json(); b64 = d?.predictions?.[0]?.bytesBase64Encoded || null; }
-          else { if (res.status === 429) throw new Error("Quota exceeded"); if (res.status === 503 && att < 2) { await sleep(3000*(att+1)); continue; } break; }
+        if (res.ok) {
+          const d = await res.json();
+          for (const p of d?.candidates?.[0]?.content?.parts || []) {
+            const found = p.inlineData?.data || p.inline_data?.data;
+            if (found) { b64 = found; break; }
+          }
         } else {
-          const parts: any[] = [{ text: prompt }];
-          if (imageB64 && imageMime) parts.push({ inlineData: { data: imageB64, mimeType: imageMime } });
-          const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${name}:generateContent?key=${GEMINI_KEY}`,
-            { method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseModalities: ["TEXT", "IMAGE"] } }) }
-          );
-          if (res.ok) {
-            const d = await res.json();
-            for (const p of d?.candidates?.[0]?.content?.parts || []) {
-              const found = p.inlineData?.data || p.inline_data?.data;
-              if (found) { b64 = found; break; }
-            }
-          } else { if (res.status === 429) throw new Error("Quota exceeded"); if (res.status === 503 && att < 2) { await sleep(3000*(att+1)); continue; } break; }
+          if (res.status === 429) throw new Error("Quota exceeded");
+          if (res.status === 503 && att < 2) { await sleep(3000 * (att + 1)); continue; }
+          break;
         }
 
         if (b64) return b64;
         break;
       } catch (e: any) {
         const msg = e.message || "";
-        if (msg.includes("Quota exceeded") || msg.includes("429")) throw e;
-        if (msg.includes("503") || msg.includes("UNAVAILABLE")) { if (att < 2) { await sleep(3000*(att+1)); continue; } }
+        if (msg.includes("Quota")) throw e;
+        if (att < 2 && (msg.includes("503") || msg.includes("UNAVAILABLE"))) { await sleep(3000 * (att + 1)); continue; }
         break;
       }
     }
   }
-  throw new Error("Image generation failed. Please try again.");
+  throw new Error("Image AI temporarily offline. Try again.");
 }

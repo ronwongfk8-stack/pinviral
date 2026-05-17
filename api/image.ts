@@ -14,7 +14,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       aspectRatio?: string;
     };
     if (!prompt) return res.status(400).json({ error: "prompt is required" });
+    
+    // Pass the aspect ratio to geminiImage
     const b64 = await geminiImage(prompt, imageB64, imageMime, aspectRatio);
+    
     res.status(200).json({ imageB64: b64 });
   } catch (err: any) {
     const msg = err.message || "Image generation failed";

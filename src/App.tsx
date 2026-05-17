@@ -79,24 +79,47 @@ const extractAndParseJSON = (text: string): any => {
   }
 };
 
+// Sub-component wrapper for file uploading
+function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void, imageUrl: string | null }) {
+  return (
+    <div className="relative border-2 border-dashed border-slate-200 hover:border-rose-400 bg-slate-50 rounded-2xl p-6 transition-all group flex flex-col items-center justify-center text-center min-h-[160px]">
+      {imageUrl ? (
+        <div className="relative w-full h-full max-h-[140px] flex items-center justify-center overflow-hidden rounded-xl bg-white">
+          <img src={imageUrl} alt="Uploaded snapshot" className="max-h-[130px] object-contain" />
+          <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-black uppercase tracking-widest cursor-pointer transition-all">
+            Change Photo
+            <input type="file" accept="image/*" onChange={onImageUpload} className="hidden" />
+          </label>
+        </div>
+      ) : (
+        <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer py-4">
+          <Upload className="text-slate-400 group-hover:text-rose-500 transition-colors mb-2" size={28} />
+          <span className="text-xs font-black text-slate-700 uppercase tracking-wider block">Drop Image Here</span>
+          <span className="text-[10px] font-bold text-slate-400 block mt-1">PNG, JPG up to 10MB</span>
+          <input type="file" accept="image/*" onChange={onImageUpload} className="hidden" />
+        </label>
+      )}
+    </div>
+  );
+}
+
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [productName, setProductName]               = useState("");
   const [isLoading, setIsLoading]                     = useState(false);
   const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
   const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
-  const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
+  const [strategy, setStrategy]                        = useState<PinStrategy | null>(null);
   const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
   const [overlayPosition, setOverlayPosition]         = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging]                   = useState(false);
+  const [isDragging, setIsDragging]                    = useState(false);
   const [editableHeadline, setEditableHeadline]       = useState("");
-  const [editableSubtext, setEditableSubtext]         = useState("");
-  const [editableCTA, setEditableCTA]                 = useState("");
-  const [uploadedImage, setUploadedImage]             = useState<string | null>(null);
-  const [generatedImage, setGeneratedImage]           = useState<string | null>(null);
-  const [copiedField, setCopiedField]                 = useState<string | null>(null);
-  const [error, setError]                             = useState<string | null>(null);
-  const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
+  const [editableSubtext, setEditableSubtext]          = useState("");
+  const [editableCTA, setEditableCTA]                  = useState("");
+  const [uploadedImage, setUploadedImage]              = useState<string | null>(null);
+  const [generatedImage, setGeneratedImage]            = useState<string | null>(null);
+  const [copiedField, setCopiedField]                  = useState<string | null>(null);
+  const [error, setError]                              = useState<string | null>(null);
   const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [overlayScale, setOverlayScale]             = useState(1);
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
@@ -104,18 +127,18 @@ export default function App() {
   const [productUrl, setProductUrl]                 = useState("");
   const [customVisualPrompt, setCustomVisualPrompt] = useState("");
 
-  // ── NEW: User state and generation tracking ─────────────────────────────────
+  // ── User state and generation tracking ─────────────────────────────────
   const [userName, setUserName]                       = useState("");
-  const [userEmail, setUserEmail]                     = useState("");
+  const [userEmail, setUserEmail]                      = useState("");
   const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
   const [showEmailModal, setShowEmailModal]           = useState(false);
   const [pendingPriceId, setPendingPriceId]           = useState<string | null>(null);
-  const [emailInput, setEmailInput]                   = useState("");
+  const [emailInput, setEmailInput]                    = useState("");
   const [paymentSuccess, setPaymentSuccess]           = useState(false);
-  const [isLoadingUser, setIsLoadingUser]             = useState(false);
+  const [isLoadingUser, setIsLoadingUser]              = useState(false);
 
   const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
@@ -232,6 +255,7 @@ export default function App() {
     setEditableSubtext(angle.subtext[0]);
     setEditableCTA(angle.cta);
     setCustomVisualPrompt(angle.aiImagePrompt || "");
+    setGeneratedImage(null); // Clear out the previously generated image for the new angle scene pipeline
   };
 
   const resetApp = () => {
@@ -317,7 +341,8 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       );
     } finally { setIsLoading(false); }
   };
-// ── Generate image → /api/image ──────────────────────────────────────────────
+
+  // ── Generate image → /api/image ──────────────────────────────────────────────
   const generateImage = async (currentStrategy?: PinStrategy) => {
     const active = currentStrategy || strategy;
     if (!active || selectedAngleIndex === null) return;
@@ -332,12 +357,10 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     try {
       const base = active.angles[selectedAngleIndex]?.aiImagePrompt || "";
       
-      // Kept clean prompt construction without cloning mode strings!
       const finalPrompt =
         `Environment: ${customVisualPrompt || base}. ` +
         `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
 
-      // CRITICAL FIX: Include the aspect ratio variable state here
       const payload: any = { 
         prompt: finalPrompt,
         aspectRatio: aspectRatio 
@@ -402,7 +425,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
     if (!strategy || selectedAngleIndex === null) return;
     setIsEnhancingSEO(true);
     try {
-      const angle  = strategy.angles[selectedAngleIndex];
+      const angle   = strategy.angles[selectedAngleIndex];
       const text   = await withRetry(() => geminiRest(
         `Pinterest SEO expert. Enhance this pin description for "${productName}" with more high-performing keywords and long-tail search terms.\nCurrent: "${angle.pinDescription}"\nReturn ONLY the new description text.`
       ));
@@ -419,11 +442,9 @@ No generic CTAs. Focus on social proof and value proposition.` });
   const downloadImage = async () => {
     if (!previewRef.current) return;
     try {
-      // Exact Pinterest dimensions: 1000x1500 (9:16) or 1000x1500 (2:3 = 1000x1333)
       const W = 1000;
       const H = aspectRatio === "9:16" ? 1500 : 1333;
 
-      // Measure the rendered element on screen
       const rect = previewRef.current.getBoundingClientRect();
       const scaleX = W / rect.width;
       const scaleY = H / rect.height;
@@ -538,7 +559,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
             <h1 className="font-bold text-xl tracking-tight">PinViral</h1>
           </div>
           <div className="flex items-center gap-4">
-            {/* Generation counter badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl">
               <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
               <span className="text-[10px] font-black uppercase tracking-widest">
@@ -564,7 +584,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
       <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
 
-        {/* ── User info bar (auto-generated) ─────────────────────────── */}
+        {/* ── User info bar ─────────────────────────────────────────── */}
         {!strategy && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
             className="max-w-4xl mx-auto mb-6">
@@ -645,7 +665,6 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
             </div>
 
-            {/* Generation usage label */}
             <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
               <div className="flex items-center gap-2">
                 <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
@@ -653,714 +672,94 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   Generation Usage: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className={cn("text-[10px] font-black px-2 py-1 rounded-lg",
-                  generationsLeft <= 3 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600")}>
-                  {generationsLeft} Left
-                </span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {TIER_NAMES[userTier]}
-                </span>
-              </div>
-            </div>
-
-            {error && (
-              <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
-                <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
-                <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
-                <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
-              </div>
-            )}
-
-            {!strategy && (
-              <button onClick={generateStrategy} disabled={isLoading || !productName.trim() || !uploadedImage}
-                className="w-full py-5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black text-xl rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
-                {isLoading ? <Loader2 className="animate-spin" size={24}/> : <><Zap size={24}/> Output 5 Viral Angles &amp; SEO</>}
+              <button 
+                onClick={generateStrategy}
+                disabled={isLoading || !productName.trim()}
+                className="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs uppercase tracking-widest rounded-xl transition-all shadow-md shadow-rose-100 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none flex items-center gap-2"
+              >
+                {isLoading ? <Loader2 className="animate-spin" size={14}/> : "Unlock Viral Blueprint"}
               </button>
-            )}
+            </div>
           </div>
         </section>
 
-        {/* ── Strategy workspace ─────────────────────────────────────────────── */}
+        {/* ── Error Output Box ───────────────────────────────────────────────── */}
+        {error && (
+          <div className="max-w-4xl mx-auto mb-8 bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center gap-3 text-rose-700">
+            <AlertCircle size={18} className="shrink-0" />
+            <span className="text-xs font-bold leading-tight">{error}</span>
+          </div>
+        )}
+
+        {/* ── Main Strategy Blueprint Panel Splitter ─────────────────────────── */}
         {strategy && (
-          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-            {/* Left panel */}
+          <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+            className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Left Column Workspace - Config cards and strategy variants */}
             <div className="lg:col-span-5 space-y-6">
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6 sticky top-24">
-
-                {/* Generation usage indicator in workspace */}
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
-                    <span className="text-[11px] font-bold text-slate-600">
-                      Used: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
-                    </span>
-                  </div>
-                  <button onClick={() => setShowUpgradeModal(true)}
-                    className="text-[10px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-widest flex items-center gap-1">
-                    <Crown size={12}/> Upgrade
-                  </button>
-                </div>
-
-                {/* Angle selector */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Strategy Angle</label>
-                      <p className="text-[9px] text-rose-500 font-bold italic">Swapping angles is free &amp; instant</p>
+              
+              {/* Marketing Blueprint Tab Selectors */}
+              <div className="bg-white rounded-3xl border border-slate-200 p-2 shadow-sm space-y-1">
+                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase px-3 pt-2 pb-1">Select Marketing Angle</p>
+                {strategy.angles.map((ang, idx) => (
+                  <button 
+                    key={idx}
+                    onClick={() => selectAngle(idx, ang)}
+                    className={cn("w-full text-left px-4 py-3.5 rounded-2xl flex items-center justify-between transition-all group",
+                      selectedAngleIndex === idx ? "bg-rose-50 border border-rose-100 text-rose-700 font-black shadow-inner-sm" : "hover:bg-slate-50 text-slate-600 font-bold")}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs leading-snug">{ang.title}</span>
+                      <span className="text-[10px] font-bold text-slate-400 group-hover:text-rose-400 mt-0.5 max-w-[280px] truncate">{ang.hook}</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {/* Angle number pills */}
-                      <div className="flex gap-1.5">
-                        {[0,1,2,3,4].map(i => (
-                          <button key={i} onClick={() => selectAngle(i, strategy.angles[i])}
-                            className={cn("w-8 h-8 rounded-full border-2 font-black text-xs transition-all flex items-center justify-center",
-                              selectedAngleIndex === i ? "bg-rose-600 border-rose-600 text-white scale-110 shadow-lg" : "bg-white border-slate-100 text-slate-300 hover:border-rose-300 hover:text-rose-600")}>
-                            {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedAngleIndex !== null && (
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{strategy.angles[selectedAngleIndex].title}</h4>
-                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].title, "title")} className="text-slate-300 hover:text-rose-600 transition-colors">
-                          {copiedField === "title" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium italic">
-                        "{strategy.angles[selectedAngleIndex].psychology}"
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* SEO assets */}
-                {selectedAngleIndex !== null && (
-                  <div className="space-y-8 pt-6 border-t border-slate-100">
-
-                    {/* SEO Title */}
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Target size={20} className="text-rose-600"/></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pinterest Title</h5>
-                          <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].seoTitle || strategy.angles[selectedAngleIndex].title, "seoTitle")}
-                            className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
-                            {copiedField === "seoTitle" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                          </button>
-                        </div>
-                        <p className="text-sm font-black text-slate-900 leading-tight">
-                          {strategy.angles[selectedAngleIndex].seoTitle || strategy.angles[selectedAngleIndex].title}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* SEO Description */}
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Search size={20} className="text-indigo-600"/></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pinterest Description</h5>
-                          <div className="flex items-center gap-1">
-                            <button onClick={enhanceSEO} disabled={isEnhancingSEO} title="Enhance SEO with AI"
-                              className="p-1 hover:bg-slate-50 rounded-lg text-violet-400 hover:text-violet-600 disabled:opacity-50 transition-all">
-                              {isEnhancingSEO ? <Loader2 size={13} className="animate-spin"/> : <Zap size={13}/>}
-                            </button>
-                            <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].pinDescription, "desc")}
-                              className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
-                              {copiedField === "desc" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="max-h-28 overflow-y-auto pr-1">
-                          <p className="text-xs text-slate-600 font-medium leading-relaxed">{strategy.angles[selectedAngleIndex].pinDescription}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Alt Text */}
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Accessibility size={20} className="text-amber-600"/></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Alt Text</h5>
-                          <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].altText || "", "altText")}
-                            className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
-                            {copiedField === "altText" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-slate-400 font-medium italic">
-                          {strategy.angles[selectedAngleIndex].altText || "Professional product visualization for lifestyle context."}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Hashtags */}
-                    <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Hash size={10}/>Viral Tags</label>
-                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].hashtags.join(" "), "tags")}
-                          className="text-slate-300 hover:text-rose-600 transition-colors">
-                          {copiedField === "tags" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {strategy.angles[selectedAngleIndex].hashtags.map((tag, i) => (
-                          <span key={i} className="px-2.5 py-1 bg-white border border-slate-100 rounded-lg text-[9px] font-black text-slate-400 uppercase tracking-tight">{tag}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Editable overlay fields */}
-                    <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-6">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Headline Override</label>
-                        <input type="text" value={editableHeadline} onChange={e => setEditableHeadline(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Subtext / Social Proof</label>
-                        <input type="text" value={editableSubtext} onChange={e => setEditableSubtext(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Visual controls */}
-                <div className="space-y-6 pt-6 border-t border-slate-100">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Visual Customizer</label>
-
-                  {/* Aspect ratio */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ id:"9:16", label:"9:16 vertical" },{ id:"2:3", label:"2:3 classic" }].map(r => (
-                      <button key={r.id} onClick={() => setAspectRatio(r.id as any)}
-                        className={cn("py-2.5 rounded-xl border-2 text-[10px] font-black uppercase transition-all tracking-widest",
-                          aspectRatio === r.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-50 text-slate-300")}>
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Scene environment auto-derived from selected angle */}
-                  {selectedAngleIndex !== null && strategy?.angles[selectedAngleIndex]?.aiImagePrompt && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
-                      <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
-                          {strategy.angles[selectedAngleIndex].aiImagePrompt}
-                        </p>
-                      </div>
-                      <p className="text-[9px] text-slate-300 font-bold italic ml-1">Auto-set from selected angle · 100% product identity preserved</p>
-                    </div>
-                  )}
-
-                  <button onClick={() => generateImage()} disabled={isGeneratingImage}
-                    className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60">
-                    {isGeneratingImage ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
-                    Regenerate Visual Identity
-                  </button>
-                  <p className="text-[9px] text-slate-400 text-center font-bold italic">
-                    Uses 1 generation · {generationsLeft} remaining · Matches selected angle
-                  </p>
-                </div>
-
-                <button onClick={resetApp}
-                  className="w-full py-3 text-[10px] font-black text-slate-300 hover:text-rose-500 uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2">
-                  <Plus size={14}/> New Campaign
-                </button>
-              </div>
-            </div>
-
-            {/* Right: main visual workspace */}
-            <div className="lg:col-span-7 space-y-6">
-              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 flex flex-col">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
-                      {isGeneratingImage ? <Loader2 className="animate-spin text-rose-600" size={18}/> : <Eye size={18} className="text-slate-400"/>}
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight">Identity Locked Pin</h3>
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-0.5">Final Creative Output</p>
-                    </div>
-                  </div>
-                  <button onClick={downloadImage} className="p-3 bg-slate-50 hover:bg-rose-50 rounded-2xl text-slate-400 hover:text-rose-600 transition-all shadow-sm active:scale-90">
-                    <Download size={20}/>
-                  </button>
-                </div>
-
-                {/* Pin canvas */}
-                <div ref={previewRef}
-                  style={{ aspectRatio: aspectRatio === "9:16" ? "9/16" : "2/3", maxWidth: aspectRatio === "9:16" ? "360px" : "400px" }}
-                  className="bg-slate-100 rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
-                  onMouseMove={handleDrag} onTouchMove={handleDrag}
-                  onMouseUp={handleDragEnd} onTouchEnd={handleDragEnd}>
-
-                  {isGeneratingImage ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 backdrop-blur-xl z-30">
-                      <div className="relative w-24 h-24 mb-6">
-                        <div className="absolute inset-0 border-8 border-rose-100 rounded-full"/>
-                        <div className="absolute inset-0 border-8 border-rose-600 rounded-full border-t-transparent animate-spin"/>
-                        <div className="absolute inset-0 flex items-center justify-center"><Target size={32} className="text-rose-600 animate-pulse"/></div>
-                      </div>
-                      <p className="font-black text-slate-900 text-xl tracking-tight">Generating...</p>
-                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-[0.3em]">Identity Preservation 100%</p>
-                    </div>
-                  ) : (
-                    <>
-                      {(generatedImage || uploadedImage) && (
-                        <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                          className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }}
-                          referrerPolicy="no-referrer" draggable={false}/>
-                      )}
-
-                      {/* Draggable text overlay */}
-                      <div className="absolute inset-0 p-10 flex flex-col justify-center items-center pointer-events-none"
-                        style={{ transform: `translate(${overlayPosition.x}%, ${overlayPosition.y}%) scale(${overlayScale})` }}>
-                        <div className="w-full pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
-                          onMouseDown={handleDragStart} onTouchStart={handleDragStart}>
-                          <div className="space-y-4 text-center">
-                            <motion.div key={editableHeadline} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="px-6">
-                              <h2 className="text-white font-black text-3xl sm:text-5xl uppercase italic tracking-tighter leading-[0.8] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] mb-3">
-                                {editableHeadline.split(" ").map((word, i) => (
-                                  <span key={i} className={i % 3 === 0 ? "text-rose-500" : ""}>{word}{" "}</span>
-                                ))}
-                              </h2>
-                            </motion.div>
-                            <p className="text-white text-[10px] sm:text-[11px] font-black leading-tight px-12 [text-shadow:_0_4px_12px_rgb(0_0_0_/_95%)] mb-8 uppercase tracking-[0.2em] opacity-90 italic">
-                              {editableSubtext}
-                            </p>
-                            <div className="flex flex-wrap justify-center gap-2 mb-10">
-                              <div className="bg-white/10 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 scale-110">
-                                <div className="flex -space-x-1">
-                                  {[0,1,2].map(i => (
-                                    <div key={i} className="w-5 h-5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center overflow-hidden">
-                                      <Star size={8} fill="white" className="text-white"/>
-                                    </div>
-                                  ))}
-                                </div>
-                                <span className="text-[10px] font-black text-white tracking-widest uppercase">
-                                  {socialProof?.stars || "4.9"} · {socialProof?.reviews || "850"} REVIEWS
-                                </span>
-                              </div>
-                            </div>
-                            <div className="inline-flex px-12 py-5 bg-rose-600 text-white text-[10px] font-black rounded-full uppercase tracking-[0.4em] shadow-[0_25px_50px_rgba(225,29,72,0.6)]">
-                              {editableCTA}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* ── Text Overlay Size slider — below preview ── */}
-                <div className="mt-4 px-1 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Overlay Size</span>
-                    <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">{Math.round(overlayScale * 100)}%</span>
-                  </div>
-                  <input type="range" min="0.4" max="1.6" step="0.01" value={overlayScale}
-                    onChange={e => setOverlayScale(parseFloat(e.target.value))}
-                    className="w-full h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-rose-600"/>
-                  <div className="flex justify-between text-[9px] text-slate-300 font-bold">
-                    <span>Small</span><span>Default</span><span>Large</span>
-                  </div>
-                </div>
-
-                {/* Headline / subtext variants — moved above Pinterest */}
-                {selectedAngleIndex !== null && (
-                  <div className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
-                        <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].headlines.map((h, i) => (
-                          <button key={i} onClick={() => setEditableHeadline(h)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableHeadline === h ? "bg-rose-600 border-rose-600 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Var {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
-                          <button key={i} onClick={() => setEditableSubtext(s)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableSubtext === s ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Proof {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── Pinterest link + Generate This Video section ── */}
-                {selectedAngleIndex !== null && (
-                  <div className="mt-4 space-y-3">
-
-                    {/* Pinterest — plain direct link */}
-                    <a href="https://pinterest.com" target="_blank" rel="noopener noreferrer"
-                      className="w-full flex items-center justify-center gap-2 py-3 bg-[#E60023] hover:bg-[#c0001d] text-white font-black text-[11px] rounded-2xl uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-red-100">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z"/></svg>
-                      Open Pinterest
-                    </a>
-
-                    {/* Generate This Video section */}
-                    <div className="border border-slate-100 rounded-2xl p-4 space-y-3 bg-slate-50/50">
-                      <div>
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-[8px] font-black bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-widest">Recommended AI Stack</span>
-                        </div>
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Viral Content Creation Engines</p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Vid AI card */}
-                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-black text-slate-900">Vid AI</span>
-                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                            </div>
-                          </div>
-                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Video Generation</p>
-                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Turn your viral prompt into high-retention clips for TikTok & Reels.</p>
-                        </div>
-                        {/* Submagic card */}
-                        <div className="bg-white rounded-xl border border-slate-100 p-3 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-black text-slate-900">Submagic</span>
-                            <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                            </div>
-                          </div>
-                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Caption Architect</p>
-                          <p className="text-[9px] text-slate-400 font-medium leading-tight">Add viral captions, b-roll & sound effects automatically.</p>
-                        </div>
-                      </div>
-
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-widest">Export & Start Generating</p>
-                      <div className="grid grid-cols-1 gap-2">
-                        <button
-                          onClick={() => {
-                            const prompt = strategy.angles[selectedAngleIndex]?.aiImagePrompt || editableHeadline || productName;
-                            navigator.clipboard.writeText(prompt);
-                            window.open("https://vid.ai/?ref=wong44", "_blank");
-                          }}
-                          className="w-full py-3 bg-slate-900 hover:bg-slate-700 text-white font-black text-[9px] rounded-xl uppercase tracking-widest transition-all active:scale-95">
-                          Copy Prompt &amp; Open Vid AI
-                        </button>
-                        <button
-                          onClick={() => {
-                            const script = strategy.angles[selectedAngleIndex]?.pinDescription || editableSubtext || productName;
-                            navigator.clipboard.writeText(script);
-                            window.open("https://submagic.co/?via=wong86", "_blank");
-                          }}
-                          className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 font-black text-[9px] rounded-xl border-2 border-slate-200 uppercase tracking-widest transition-all active:scale-95">
-                          Copy Script &amp; Open Submagic
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-
-                {error && (
-                  <div className="mt-6 flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
-                    <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
-                    <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
-                    <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* Empty state */}
-        {!strategy && !isLoading && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-            <FeatureCard icon={<Zap className="text-rose-500"/>} title="Viral Psychology" desc="Proven impulse-buy triggers ensure your pins get saved."/>
-            <FeatureCard icon={<Search className="text-rose-500"/>} title="SEO Optimized" desc="Descriptions packed with high-volume Pinterest keywords."/>
-            <FeatureCard icon={<ImageIcon className="text-rose-500"/>} title="AI Visuals" desc="Generate stunning product images via Imagen & Gemini."/>
-          </motion.div>
-        )}
-
-        {/* ── PRICING SECTION ─────────────────────────────────────────────── */}
-        <section id="pricing-section" className="py-24 bg-slate-50 border-t border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* Section Header */}
-            <div className="text-center max-w-3xl mx-auto mb-16">
-              <p className="text-rose-600 font-black uppercase tracking-[0.3em] text-xs mb-4">Pricing</p>
-              <h2 className="text-4xl md:text-5xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
-                Simple, Transparent Pricing
-              </h2>
-              <p className="text-lg text-slate-500 mb-2">
-                Pay once, generate forever. No subscriptions, no hidden fees.
-              </p>
-              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold mt-4">
-                <Check size={16} />
-                One-time purchase — credits never expire
-              </div>
-            </div>
-
-            {/* Pricing Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto items-stretch">
-              <PricingCard 
-                tier="Free Trial" 
-                price="$0" 
-                generations="3 generations"
-                description="Perfect for testing the platform"
-                features={[
-                  "3 AI generations",
-                  "5 viral angles per product",
-                  "SEO descriptions & hashtags",
-                  "Basic image export",
-                  "Community support"
-                ]} 
-                tierKey="free" 
-                currentTier={userTier} 
-                onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
-              />
-              <PricingCard 
-                tier="Starter" 
-                price="$24" 
-                generations="50 generations"
-                description="For creators getting started"
-                features={[
-                  "50 AI generations",
-                  "All viral strategy features",
-                  "AI image generation",
-                  "Social proof detection",
-                  "HD image export",
-                  "Email support"
-                ]} 
-                tierKey="starter" 
-                currentTier={userTier} 
-                onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
-              />
-              <PricingCard 
-                tier="Pro" 
-                price="$49" 
-                generations="200 generations"
-                description="For power sellers & agencies"
-                features={[
-                  "200 AI generations",
-                  "Everything in Starter",
-                  "Priority processing",
-                  "Advanced cloning modes",
-                  "4K image export",
-                  "Priority support",
-                  "Video storyboard generation"
-                ]} 
-                isPopular
-                tierKey="pro" 
-                currentTier={userTier} 
-                onSelect={setUserTier}
-                onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
-              />
-            </div>
-          </div>
-        </section>
-      </main>
-
-      <footer className="bg-slate-900 border-t border-white/10 py-16 px-6 text-white mt-12">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center shadow-lg shadow-rose-900/40"><Sparkles size={20} className="text-white"/></div>
-            <span className="text-2xl font-black tracking-tight">PIN<span className="text-rose-500">VIRAL</span></span>
-          </div>
-          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">© 2026 PinViral. Not affiliated with Pinterest Inc.</p>
-          <div className="flex items-center gap-2 text-emerald-500">
-            <div className="w-1.5 h-1.5 bg-current rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]"/>
-            <span className="text-[10px] font-black uppercase tracking-widest">Systems Operational</span>
-          </div>
-        </div>
-      </footer>
-
-      {/* Upgrade Modal */}
-      <AnimatePresence>
-        {showUpgradeModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => setShowUpgradeModal(false)}>
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-[2.5rem] p-8 max-w-lg w-full shadow-2xl"
-              onClick={e => e.stopPropagation()}>
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <Crown size={32} className="text-rose-600"/>
-                </div>
-                <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Upgrade Your Plan</h3>
-                <p className="text-slate-500 text-sm font-medium">
-                  You have used <span className="text-rose-600 font-black">{generationsUsed}</span> of <span className="text-slate-900 font-black">{TIER_LIMITS[userTier]}</span> generations.
-                </p>
-              </div>
-              <div className="space-y-3 mb-8">
-                {[
-                  { key: "starter" as const, name: "Starter", price: "$24", gens: "50 generations", desc: "Best for beginners" },
-                  { key: "pro" as const, name: "Pro", price: "$49", gens: "200 generations", desc: "Best for power sellers" },
-                ].map(plan => (
-                  <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
-                    className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
-                      userTier === plan.key
-                        ? "bg-rose-50 border-rose-600"
-                        : "bg-white border-slate-100 hover:border-rose-200")}>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900">{plan.name}</span>
-                        {userTier === plan.key && <span className="text-[9px] font-black text-rose-600 bg-rose-100 px-2 py-0.5 rounded-full">Current</span>}
-                      </div>
-                      <p className="text-[11px] text-slate-400 font-medium mt-0.5">{plan.desc}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="font-black text-slate-900">{plan.price}</span>
-                      <p className="text-[10px] text-slate-400 font-bold">{plan.gens}</p>
-                    </div>
+                    <ArrowRight size={14} className={cn("opacity-0 transition-all", selectedAngleIndex === idx ? "opacity-100 text-rose-600 translate-x-1" : "group-hover:opacity-40")} />
                   </button>
                 ))}
               </div>
-              <button onClick={() => setShowUpgradeModal(false)}
-                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm rounded-2xl transition-all">
-                Maybe Later
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
-function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
-  return (
-    <label className="flex flex-col items-center justify-center w-full min-h-[160px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2.5rem] cursor-pointer hover:bg-slate-100 transition-all text-slate-400 overflow-hidden relative group">
-      {imageUrl ? (
-        <>
-          <img src={imageUrl} alt="Uploaded product" className="w-full h-full object-cover"/>
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
-            <RefreshCw size={28} className="mb-2"/>
-            <p className="text-xs font-black uppercase tracking-widest">Change Image</p>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="w-16 h-16 bg-white rounded-2xl shadow-xl flex items-center justify-center mb-4 text-slate-300 group-hover:text-rose-500 group-hover:scale-110 transition-all"><Upload size={32} className="stroke-[2]"/></div>
-          <p className="text-lg font-black text-slate-900 tracking-tight mb-1">Source Visual</p>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Upload your product photo</p>
-        </>
-      )}
-      <input type="file" className="hidden" accept="image/*" onChange={onImageUpload}/>
-    </label>
-  );
-}
+              {/* Live Overlay Customization Drawer Card */}
+              {selectedAngleIndex !== null && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-5">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <Palette size={16} className="text-rose-500"/>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-800">Customize Overlay Copy</h3>
+                  </div>
 
-function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
-  return (
-    <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow text-center">
-      <div className="w-12 h-12 bg-rose-50 rounded-2xl flex items-center justify-center mx-auto mb-4">{icon}</div>
-      <h3 className="font-bold text-slate-800 mb-2">{title}</h3>
-      <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
-    </div>
-  );
-}
+                  {/* Headline selectors variant box */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Headline Overlay Variants</label>
+                    <div className="flex flex-wrap gap-1.5 max-h-[85px] overflow-y-auto p-1 bg-slate-50 rounded-xl border border-slate-100">
+                      {strategy.angles[selectedAngleIndex].headlines.map((hl, i) => (
+                        <button key={i} onClick={() => setEditableHeadline(hl)}
+                          className={cn("text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all text-left truncate max-w-[100%]", 
+                            editableHeadline === hl ? "bg-white border-rose-200 text-rose-600 shadow-sm" : "bg-white hover:bg-slate-100 border-slate-200 text-slate-600")}>
+                          {hl}
+                        </button>
+                      ))}
+                    </div>
+                    <input type="text" value={editableHeadline} onChange={e => setEditableHeadline(e.target.value)}
+                      className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-xs font-bold text-slate-800 mt-1" />
+                  </div>
 
-function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
-  const [loading, setLoading] = useState(false);
+                  {/* Subtext lines options */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subtext Overlay Variants</label>
+                    <div className="flex flex-wrap gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-100">
+                      {strategy.angles[selectedAngleIndex].subtext.map((st, i) => (
+                        <button key={i} onClick={() => setEditableSubtext(st)}
+                          className={cn("text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all text-left", 
+                            editableSubtext === st ? "bg-white border-rose-200 text-rose-600 shadow-sm" : "bg-white hover:bg-slate-100 border-slate-200 text-slate-600")}>
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                    <input type="text" value={editableSubtext} onChange={e => setEditableSubtext(e.target.value)}
+                      className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text-xs font-bold text-slate-700 mt-1" />
+                  </div>
 
-  const PRICE_IDS: Record<string, string> = {
-    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
-    pro:     "price_1TXDk3B7i0tTYaLUBr36BDko",
-  };
-
-  function handleBuy() {
-    if (tierKey === "free") { onSelect("free"); return; }
-    const priceId = PRICE_IDS[tierKey];
-    if (!priceId) { alert("Price not configured for this plan."); return; }
-    // Open email modal in parent, passing priceId
-    onRequestCheckout(priceId);
-  }
-
-  const isCurrent = currentTier === tierKey;
-  const isFree = tierKey === "free";
-
-  return (
-    <div className={`relative rounded-3xl border-2 p-8 flex flex-col gap-6 min-h-[580px] w-full transition-all duration-300 hover:scale-[1.02] ${
-      isPopular 
-        ? "border-rose-500 shadow-2xl shadow-rose-200/50 bg-white md:-mt-4 md:mb-4" 
-        : "border-slate-200 shadow-xl shadow-slate-200/50 bg-white"
-    } ${isCurrent ? "ring-4 ring-emerald-400 ring-offset-2" : ""}`}>
-      
-      {isPopular && (
-        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-rose-500 to-rose-600 text-white text-xs font-bold px-6 py-2.5 rounded-full shadow-lg uppercase tracking-wider">
-          Most Popular
-        </div>
-      )}
-      
-      {/* Header */}
-      <div className="text-center pt-2">
-        <h3 className={`text-2xl font-black ${isPopular ? "text-rose-600" : "text-slate-800"}`}>
-          {tier}
-        </h3>
-        <p className="text-sm text-slate-500 mt-2 font-medium">{description}</p>
-      </div>
-      
-      {/* Price */}
-      <div className="text-center py-6 border-y border-slate-100">
-        <div className="flex items-baseline justify-center gap-1">
-          <span className="text-5xl font-black text-slate-900">{price}</span>
-          {!isFree && <span className="text-sm text-slate-400 font-medium">one-time</span>}
-        </div>
-        <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold">
-          <Zap size={16} />
-          {generations}
-        </div>
-      </div>
-      
-      {/* Features */}
-      <ul className="flex flex-col gap-3 flex-1">
-        {features.map((f: string, i: number) => (
-          <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
-            <Check size={18} className={`mt-0.5 shrink-0 ${isPopular ? "text-rose-500" : "text-emerald-500"}`} />
-            <span className="font-medium">{f}</span>
-          </li>
-        ))}
-      </ul>
-      
-      {/* CTA Button */}
-      <button
-        onClick={handleBuy}
-        disabled={loading || isCurrent}
-        className={`w-full py-4 rounded-xl text-sm font-bold transition-all duration-200 ${
-          isCurrent 
-            ? "bg-emerald-100 text-emerald-700 cursor-default"
-            : isFree
-            ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-2 border-slate-300"
-            : isPopular
-            ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700 shadow-lg shadow-rose-200"
-            : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
-        }`}
-      >
-        {loading ? "Processing..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
-      </button>
-    </div>
-  );
-}
+                  {/* CTA line */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Action Call Button Text</label>
+                    <input type="text" value={editableCTA} onChange={e => setEditableCTA(e.target.value)}
+                      className="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 outline-none text
