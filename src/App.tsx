@@ -294,7 +294,7 @@ For each angle provide:
 2. seoTitle (High-CTR pin title, e.g. "Why Every Home Needs This")
 3. hook (1-line attention grabber)
 4. psychology (emotional trigger explanation)
-5. aiImagePrompt (50-80 word descriptive scene)
+5. aiImagePrompt (50-80 word descriptive scene. CRITICAL: The ENTIRE product must be fully visible in the frame — no cropping, no cutting off edges, full product shown from top to bottom with generous padding around it. Product centered, floating or on surface, complete product visible.)
 6. headlines (exactly 5 punchy variants)
 7. subtext (exactly 3 social-proof lines)
 8. cta
@@ -345,7 +345,8 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       };
       const finalPrompt =
         `${CLONING[cloningMode]} Environment: ${customVisualPrompt || base}. ` +
-        `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
+        `CRITICAL COMPOSITION RULE: Show the COMPLETE product in full — entire product visible from top to bottom, no cropping, no partial cuts, full object with clear space/padding around all edges. Product must be 100% fully visible in frame. ` +
+        `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic. Wide enough shot to show entire product.`;
 
       const payload: any = { prompt: finalPrompt };
       if (uploadedImage?.startsWith("data:")) {
