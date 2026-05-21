@@ -83,29 +83,48 @@ export default async function handler(req, res) {
     const newLeft      = currentLeft  + plan.generations;
     const newTotal     = currentTotal + plan.generations;
 
-    const now = new Date().toISOString();
-    const body = JSON.stringify({
-      email:              cleanEmail,
-      plan:               plan.plan,
-      images_left:        newLeft,
-      images_total:       newTotal,
-      videos_left:        0,
-      videos_total:       0,
-      billing:            "one-time",
-      stripe_customer_id: cleanEmail,
-      activated_at:       now,
-      updated_at:         now,
-    });
+    console.log("[activate] credits: existing left:", currentLeft, "+ new:", plan.generations, "= total left:", newLeft);
 
-    // ── Step 3: Upsert (insert or update on email conflict) ───────────────────
-    const sbRes = await fetch(`${supabaseUrl}/rest/v1/users`, {
-      method: "POST",
-      headers: {
-        ...headers,
-        "Prefer": "resolution=merge-duplicates",
-      },
-      body,
-    });
+    const now = new Date().toISOString();
+    let sbRes;
+
+    if (existingUser) {
+      // ── Step 3a: User exists — PATCH only the fields that change ─────────────
+      // Using PATCH by email avoids any primary-key ambiguity.
+      // We never touch images_left via a full replace — only additive PATCH.
+      sbRes = await fetch(
+        `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}`,
+        {
+          method: "PATCH",
+          headers: { ...headers, "Prefer": "return=minimal" },
+          body: JSON.stringify({
+            plan:         plan.plan,
+            images_left:  newLeft,
+            images_total: newTotal,
+            billing:      "one-time",
+            updated_at:   now,
+          }),
+        }
+      );
+    } else {
+      // ── Step 3b: New user — INSERT ────────────────────────────────────────────
+      sbRes = await fetch(`${supabaseUrl}/rest/v1/users`, {
+        method: "POST",
+        headers: { ...headers, "Prefer": "return=minimal" },
+        body: JSON.stringify({
+          email:              cleanEmail,
+          plan:               plan.plan,
+          images_left:        newLeft,
+          images_total:       newTotal,
+          videos_left:        0,
+          videos_total:       0,
+          billing:            "one-time",
+          stripe_customer_id: cleanEmail,
+          activated_at:       now,
+          updated_at:         now,
+        }),
+      });
+    }
 
     const text = await sbRes.text();
     console.log("[activate] supabase status:", sbRes.status, "body:", text);

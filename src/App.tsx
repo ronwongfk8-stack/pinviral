@@ -109,6 +109,7 @@ export default function App() {
   const [userEmail, setUserEmail]                     = useState("");
   const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
   const [generationsUsed, setGenerationsUsed]         = useState(0);
+  const [imagesLeft, setImagesLeft]                   = useState<number | null>(null); // actual DB value
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
   const [showEmailModal, setShowEmailModal]           = useState(false);
@@ -120,7 +121,8 @@ export default function App() {
   const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
-  const generationsLeft = TIER_LIMITS[userTier] - generationsUsed;
+  // Prefer real DB value — handles top-ups correctly (starter+pro = 250, not capped at 200)
+  const generationsLeft = imagesLeft !== null ? imagesLeft : TIER_LIMITS[userTier] - generationsUsed;
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -152,7 +154,11 @@ export default function App() {
       console.log("[activatePlan] response:", JSON.stringify(data));
       if (!res.ok) throw new Error(data.error);
       setUserTier(data.plan as any);
-      setGenerationsUsed(0);
+      // Use actual values from server — top-ups add to existing balance.
+      if (data.images_left != null) {
+        setImagesLeft(data.images_left);
+        setGenerationsUsed(data.images_total != null ? data.images_total - data.images_left : 0);
+      }
       setUserEmail(email);
       localStorage.setItem("pinviral_email", email);
     } catch (err: any) {
@@ -211,6 +217,7 @@ export default function App() {
       localStorage.setItem("pinviral_email", email);
       setUserEmail(email);
       setUserTier(user.plan as any);
+      setImagesLeft(user.images_left);
       setGenerationsUsed(user.images_total - user.images_left);
     } catch { /* non-fatal */ }
     finally { setIsLoadingUser(false); }
@@ -308,6 +315,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
       setStrategy(data);
       selectAngle(0, data.angles[0]);
       setGenerationsUsed(p => p + CREATION_COSTS.STRATEGY);
+      setImagesLeft(p => p !== null ? p - CREATION_COSTS.STRATEGY : null);
     } catch (err: any) {
       const msg = err.message || "";
       setError(
@@ -354,6 +362,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
 
       setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
       setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
+      setImagesLeft(p => p !== null ? p - CREATION_COSTS.IMAGE : null);
     } catch (err: any) { setError(err.message || "Failed to generate image."); }
     finally { setIsGeneratingImage(false); }
   };
