@@ -119,7 +119,7 @@ export default function App() {
   const [paymentSuccess, setPaymentSuccess]           = useState(false);
   const [isLoadingUser, setIsLoadingUser]             = useState(false);
 
-  const TIER_LIMITS = { free: 3, starter: 50, pro: 200, scale: 999999 };
+  const TIER_LIMITS = { free: 3, starter: 75, pro: 250, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
   // Prefer real DB value — handles top-ups correctly (starter+pro = 250, not capped at 200)
@@ -1072,8 +1072,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       <div className="grid grid-cols-1 gap-2">
                         <button
                           onClick={() => {
-                            const prompt = strategy.angles[selectedAngleIndex]?.aiImagePrompt || editableHeadline || productName;
-                            navigator.clipboard.writeText(prompt);
+                            const videoScript = strategy.angles[selectedAngleIndex]?.videoPrompts?.join("\n\n") || strategy.angles[selectedAngleIndex]?.aiImagePrompt || productName;
+                            navigator.clipboard.writeText(videoScript);
                             window.open("https://vid.ai/?ref=wong44", "_blank");
                           }}
                           className="w-full py-3 bg-slate-900 hover:bg-slate-700 text-white font-black text-[9px] rounded-xl uppercase tracking-widest transition-all active:scale-95">
@@ -1154,14 +1154,15 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Starter" 
-                price="$24" 
-                generations="50 generations"
+                price="$19" 
+                generations="75 generations"
                 description="For creators getting started"
                 features={[
-                  "50 AI generations",
-                  "All viral strategy features",
+                  "75 AI generations",
+                  "5 viral angles per product",
                   "AI image generation",
                   "Social proof detection",
+                  "Video scripts for Vid.ai & Submagic",
                   "HD image export",
                   "Email support"
                 ]} 
@@ -1172,17 +1173,17 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Pro" 
-                price="$49" 
-                generations="200 generations"
+                price="$39" 
+                generations="250 generations"
                 description="For power sellers & agencies"
                 features={[
-                  "200 AI generations",
+                  "250 AI generations",
                   "Everything in Starter",
                   "Priority processing",
                   "Advanced cloning modes",
+                  "Video scripts for Vid.ai & Submagic",
                   "4K image export",
-                  "Priority support",
-                  "Video storyboard generation"
+                  "Priority support"
                 ]} 
                 isPopular
                 tierKey="pro" 
@@ -1229,8 +1230,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
               <div className="space-y-3 mb-8">
                 {[
-                  { key: "starter" as const, name: "Starter", price: "$24", gens: "50 generations", desc: "Best for beginners" },
-                  { key: "pro" as const, name: "Pro", price: "$49", gens: "200 generations", desc: "Best for power sellers" },
+                  { key: "starter" as const, name: "Starter", price: "$19", gens: "75 generations", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$39", gens: "250 generations", desc: "Best for power sellers" },
                 ].map(plan => (
                   <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
