@@ -110,6 +110,7 @@ export default function App() {
   const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
   const [generationsUsed, setGenerationsUsed]         = useState(0);
   const [imagesLeft, setImagesLeft]                   = useState<number | null>(null); // actual DB value
+  const [imagesTotal, setImagesTotal]                 = useState<number | null>(null); // actual DB total
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
 
   const [showEmailModal, setShowEmailModal]           = useState(false);
@@ -123,6 +124,7 @@ export default function App() {
 
   // Prefer real DB value — handles top-ups correctly (starter+pro = 250, not capped at 200)
   const generationsLeft = imagesLeft !== null ? imagesLeft : TIER_LIMITS[userTier] - generationsUsed;
+  const generationsTotal = imagesTotal !== null ? imagesTotal : TIER_LIMITS[userTier];
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -157,6 +159,7 @@ export default function App() {
       // Use actual values from server — top-ups add to existing balance.
       if (data.images_left != null) {
         setImagesLeft(data.images_left);
+        setImagesTotal(data.images_total ?? data.images_left);
         setGenerationsUsed(data.images_total != null ? data.images_total - data.images_left : 0);
       }
       setUserEmail(email);
@@ -218,6 +221,7 @@ export default function App() {
       setUserEmail(email);
       setUserTier(user.plan as any);
       setImagesLeft(user.images_left);
+      setImagesTotal(user.images_total);
       setGenerationsUsed(user.images_total - user.images_left);
     } catch { /* non-fatal */ }
     finally { setIsLoadingUser(false); }
@@ -279,7 +283,7 @@ export default function App() {
   const generateStrategy = async () => {
     if (!productName.trim()) return;
     if (generationsLeft < CREATION_COSTS.STRATEGY) {
-      setError(`No generations left. You have used ${generationsUsed}/${TIER_LIMITS[userTier]}. Upgrade to continue.`);
+      setError(`No generations left. You have used ${generationsUsed}/${generationsTotal}. Upgrade to continue.`);
       setShowUpgradeModal(true);
       return;
     }
@@ -332,7 +336,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     if (!active || selectedAngleIndex === null) return;
 
     if (generationsLeft < CREATION_COSTS.IMAGE) {
-      setError(`No generations left. You have used ${generationsUsed}/${TIER_LIMITS[userTier]}. Upgrade to continue.`);
+      setError(`No generations left. You have used ${generationsUsed}/${generationsTotal}. Upgrade to continue.`);
       setShowUpgradeModal(true);
       return;
     }
@@ -493,7 +497,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
             <span className="font-black text-sm">
               {isLoadingUser
                 ? `⏳ Payment received! Activating your plan for ${userEmail}...`
-                : `🎉 Activated! Welcome to ${TIER_NAMES[userTier]} — ${TIER_LIMITS[userTier]} generations ready for ${userEmail}`}
+                : `🎉 Activated! Welcome to ${TIER_NAMES[userTier]} — ${generationsTotal} generations ready for ${userEmail}`}
             </span>
             <button onClick={() => setPaymentSuccess(false)} className="ml-4 text-white/80 hover:text-white text-lg leading-none">×</button>
           </motion.div>
@@ -551,7 +555,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl">
               <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
               <span className="text-[10px] font-black uppercase tracking-widest">
-                {generationsUsed}/{TIER_LIMITS[userTier]} Used
+                {generationsUsed}/{generationsTotal} Used
               </span>
               <span className={cn("text-[10px] font-black px-1.5 py-0.5 rounded-md",
                 generationsLeft <= 3 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600")}>
@@ -591,7 +595,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl">
                   <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                    {generationsUsed}/{TIER_LIMITS[userTier]} Used
+                    {generationsUsed}/{generationsTotal} Used
                   </span>
                 </div>
                 <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-xl">
@@ -660,7 +664,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
               <div className="flex items-center gap-2">
                 <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
                 <span className="text-[11px] font-bold text-slate-600">
-                  Generation Usage: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
+                  Generation Usage: <span className="text-slate-900">{generationsUsed}</span> / {generationsTotal}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -705,7 +709,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   <div className="flex items-center gap-2">
                     <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
                     <span className="text-[11px] font-bold text-slate-600">
-                      Used: <span className="text-slate-900">{generationsUsed}</span> / {TIER_LIMITS[userTier]}
+                      Used: <span className="text-slate-900">{generationsUsed}</span> / {generationsTotal}
                     </span>
                   </div>
                   <button onClick={() => setShowUpgradeModal(true)}
@@ -1220,7 +1224,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 </div>
                 <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">Upgrade Your Plan</h3>
                 <p className="text-slate-500 text-sm font-medium">
-                  You have used <span className="text-rose-600 font-black">{generationsUsed}</span> of <span className="text-slate-900 font-black">{TIER_LIMITS[userTier]}</span> generations.
+                  You have used <span className="text-rose-600 font-black">{generationsUsed}</span> of <span className="text-slate-900 font-black">{generationsTotal}</span> generations.
                 </p>
               </div>
               <div className="space-y-3 mb-8">
