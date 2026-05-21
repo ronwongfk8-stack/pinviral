@@ -1315,6 +1315,8 @@ function PricingCard({ tier, price, generations, description, features, isPopula
 
   const isCurrent = currentTier === tierKey;
   const isFree = tierKey === "free";
+  // Paid plans are always purchasable — credits stack on top of existing balance
+  const isDisabled = loading || (isFree && isCurrent);
 
   return (
     <div className={`relative rounded-3xl border-2 p-8 flex flex-col gap-6 min-h-[580px] w-full transition-all duration-300 hover:scale-[1.02] ${
@@ -1362,9 +1364,9 @@ function PricingCard({ tier, price, generations, description, features, isPopula
       {/* CTA Button */}
       <button
         onClick={handleBuy}
-        disabled={loading || isCurrent}
+        disabled={isDisabled}
         className={`w-full py-4 rounded-xl text-sm font-bold transition-all duration-200 ${
-          isCurrent 
+          isFree && isCurrent
             ? "bg-emerald-100 text-emerald-700 cursor-default"
             : isFree
             ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-2 border-slate-300"
@@ -1373,7 +1375,7 @@ function PricingCard({ tier, price, generations, description, features, isPopula
             : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
         }`}
       >
-        {loading ? "Processing..." : isCurrent ? "Current Plan" : isFree ? "Get Started Free" : "Buy Credits"}
+        {loading ? "Processing..." : isFree && isCurrent ? "Current Plan" : isFree ? "Get Started Free" : isCurrent ? "＋ Add More Credits" : "Buy Credits"}
       </button>
     </div>
   );
