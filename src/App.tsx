@@ -119,7 +119,7 @@ export default function App() {
   const [paymentSuccess, setPaymentSuccess]           = useState(false);
   const [isLoadingUser, setIsLoadingUser]             = useState(false);
 
-  const TIER_LIMITS = { free: 3, starter: 75, pro: 250, scale: 999999 };
+  const TIER_LIMITS = { free: 3, starter: 80, pro: 300, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
   // Prefer real DB value — handles top-ups correctly (starter+pro = 250, not capped at 200)
@@ -1154,17 +1154,16 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Starter" 
-                price="$19" 
-                generations="75 generations"
+                price="$24" 
+                generations="80 generations"
                 description="For creators getting started"
                 features={[
-                  "75 AI generations",
-                  "5 viral angles per product",
+                  "80 AI generations",
+                  "All viral strategy features",
                   "AI image generation",
                   "Social proof detection",
-                  "Video scripts for Vid.ai & Submagic",
                   "HD image export",
-                  "Email support"
+                  "Email support",
                 ]} 
                 tierKey="starter" 
                 currentTier={userTier} 
@@ -1173,17 +1172,17 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Pro" 
-                price="$39" 
-                generations="250 generations"
+                price="$49" 
+                generations="300 generations"
                 description="For power sellers & agencies"
                 features={[
-                  "250 AI generations",
+                  "300 AI generations",
                   "Everything in Starter",
                   "Priority processing",
                   "Advanced cloning modes",
-                  "Video scripts for Vid.ai & Submagic",
                   "4K image export",
-                  "Priority support"
+                  "Priority support",
+                  "Custom visual environments",
                 ]} 
                 isPopular
                 tierKey="pro" 
@@ -1230,8 +1229,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
               <div className="space-y-3 mb-8">
                 {[
-                  { key: "starter" as const, name: "Starter", price: "$19", gens: "75 generations", desc: "Best for beginners" },
-                  { key: "pro" as const, name: "Pro", price: "$39", gens: "250 generations", desc: "Best for power sellers" },
+                  { key: "starter" as const, name: "Starter", price: "$24", gens: "80 generations", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$49", gens: "300 generations", desc: "Best for power sellers" },
                 ].map(plan => (
                   <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",

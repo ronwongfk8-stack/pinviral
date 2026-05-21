@@ -47,8 +47,8 @@ export default async function handler(req, res) {
   }
 
   const PLAN_CONFIG = {
-    "price_1TXDjcB7i0tTYaLUodi6N2Zy": { plan: "starter", generations: 75 },
-    "price_1TXDk3B7i0tTYaLUBr36BDko": { plan: "pro",     generations: 250 },
+    "price_1TXDjcB7i0tTYaLUodi6N2Zy": { plan: "starter", generations: 80 },
+    "price_1TXDk3B7i0tTYaLUBr36BDko": { plan: "pro",     generations: 300 },
   };
 
   if (!email || !priceId) {
