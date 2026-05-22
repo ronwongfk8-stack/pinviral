@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server misconfiguration: missing Supabase env vars" });
   }
 
-  const PLAN_CONFIG: Record<string, { plan: string; generations: number; billing: string }> = {
+  const PLAN_CONFIG = {
     "price_1TZjEpB7i0tTYaLUQq8ijMg1": { plan: "starter", generations: 100, billing: "subscription" },
     "price_1TZjFQB7i0tTYaLU4gE4wyKD": { plan: "pro",     generations: 400, billing: "subscription" },
     "price_1TZjGBB7i0tTYaLUDtGZKvCr": { plan: "topup",   generations: 50,  billing: "topup" },
