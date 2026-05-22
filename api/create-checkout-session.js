@@ -12,11 +12,17 @@ export default async function handler(req, res) {
     const successUrl = `${req.headers.origin}/?payment=success&email=${encodeURIComponent(email || "")}&price_id=${encodeURIComponent(priceId)}`;
     const cancelUrl  = `${req.headers.origin}/?payment=cancelled`;
 
+    const SUBSCRIPTION_PRICES = [
+      "price_1TZjEpB7i0tTYaLUQq8ijMg1", // Starter $17/mo
+      "price_1TZjFQB7i0tTYaLU4gE4wyKD", // Pro $37/mo
+    ];
+    const mode = SUBSCRIPTION_PRICES.includes(priceId) ? "subscription" : "payment";
+
     const params = new URLSearchParams();
     params.append("payment_method_types[]", "card");
     params.append("line_items[0][price]", priceId);
     params.append("line_items[0][quantity]", "1");
-    params.append("mode", "payment");
+    params.append("mode", mode);
     params.append("success_url", successUrl);
     params.append("cancel_url", cancelUrl);
     params.append("metadata[userId]", userId || "anonymous");
