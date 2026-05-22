@@ -189,13 +189,18 @@ export default function App() {
       setUserEmail(email);
       localStorage.setItem("pinviral_email", email);
       window.history.replaceState({}, "", "/");
+      window.scrollTo({ top: 0, behavior: "smooth" });
       const priceId = params.get("price_id");
       console.log("[mount] priceId:", priceId);
       if (priceId) {
-        activatePlan(email, priceId);
+        activatePlan(email, priceId).then(() => {
+          // Auto-dismiss banner after 5s once activation is done
+          setTimeout(() => setPaymentSuccess(false), 5000);
+        });
       } else {
         console.warn("[mount] No price_id in URL — falling back to Supabase");
         loadUserFromSupabase(email);
+        setTimeout(() => setPaymentSuccess(false), 5000);
       }
     } else {
       const saved = localStorage.getItem("pinviral_email");
