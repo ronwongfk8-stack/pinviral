@@ -289,8 +289,6 @@ export default function App() {
       setShowOutOfCreditsModal(true);
       return;
     }
-      return;
-    }
     setIsLoading(true); setError(null);
     setGeneratedImage(null); setSocialProof(null); setCustomVisualPrompt("");
     try {
