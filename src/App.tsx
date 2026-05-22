@@ -112,6 +112,7 @@ export default function App() {
   const [imagesLeft, setImagesLeft]                   = useState<number | null>(null); // actual DB value
   const [imagesTotal, setImagesTotal]                 = useState<number | null>(null); // actual DB total
   const [showUpgradeModal, setShowUpgradeModal]       = useState(false);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
 
   const [showEmailModal, setShowEmailModal]           = useState(false);
   const [pendingPriceId, setPendingPriceId]           = useState<string | null>(null);
@@ -119,12 +120,14 @@ export default function App() {
   const [paymentSuccess, setPaymentSuccess]           = useState(false);
   const [isLoadingUser, setIsLoadingUser]             = useState(false);
 
-  const TIER_LIMITS = { free: 3, starter: 80, pro: 300, scale: 999999 };
+  const TIER_LIMITS = { free: 3, starter: 100, pro: 400, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
   // Prefer real DB value — handles top-ups correctly (starter+pro = 250, not capped at 200)
   const generationsLeft = imagesLeft !== null ? imagesLeft : TIER_LIMITS[userTier] - generationsUsed;
   const generationsTotal = imagesTotal !== null ? imagesTotal : TIER_LIMITS[userTier];
+  const LOW_CREDIT_THRESHOLD = 10;
+  const isLowCredit = generationsLeft <= LOW_CREDIT_THRESHOLD && generationsLeft > 0 && userTier !== "free";
 
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -283,8 +286,9 @@ export default function App() {
   const generateStrategy = async () => {
     if (!productName.trim()) return;
     if (generationsLeft < CREATION_COSTS.STRATEGY) {
-      setError(`No generations left. You have used ${generationsUsed}/${generationsTotal}. Upgrade to continue.`);
-      setShowUpgradeModal(true);
+      setShowOutOfCreditsModal(true);
+      return;
+    }
       return;
     }
     setIsLoading(true); setError(null);
@@ -336,8 +340,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     if (!active || selectedAngleIndex === null) return;
 
     if (generationsLeft < CREATION_COSTS.IMAGE) {
-      setError(`No generations left. You have used ${generationsUsed}/${generationsTotal}. Upgrade to continue.`);
-      setShowUpgradeModal(true);
+      setShowOutOfCreditsModal(true);
       return;
     }
 
@@ -686,6 +689,20 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
             )}
 
+            {/* Low credit warning */}
+            {isLowCredit && !strategy && (
+              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">⚠️</span>
+                  <span className="text-xs font-black text-amber-700">Only <span className="text-amber-900">{generationsLeft}</span> generations left!</span>
+                </div>
+                <button onClick={() => { setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setShowEmailModal(true); }}
+                  className="text-[10px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-full transition-all shrink-0">
+                  Top Up $9
+                </button>
+              </div>
+            )}
+
             {!strategy && (
               <button onClick={generateStrategy} disabled={isLoading || !productName.trim() || !uploadedImage}
                 className="w-full py-5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black text-xl rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
@@ -953,7 +970,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                               {editableSubtext}
                             </p>
                             <div className="flex flex-wrap justify-center gap-2 mb-10">
-                              <div className="bg-white/10 backdrop-blur-xl border border-white/20 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 scale-110">
+                              <div className="bg-black/80 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 scale-110">
                                 <div className="flex -space-x-1">
                                   {[0,1,2].map(i => (
                                     <div key={i} className="w-5 h-5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center overflow-hidden">
@@ -1154,14 +1171,16 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Starter" 
-                price="$24" 
-                generations="80 generations"
+                price="$17" 
+                billing="mo"
+                generations="100 generations/month"
                 description="For creators getting started"
                 features={[
-                  "80 AI generations",
+                  "100 AI generations/month",
                   "All viral strategy features",
                   "AI image generation",
                   "Social proof detection",
+                  "Video scripts for Vid.ai & Submagic",
                   "HD image export",
                   "Email support",
                 ]} 
@@ -1172,11 +1191,12 @@ No generic CTAs. Focus on social proof and value proposition.` });
               />
               <PricingCard 
                 tier="Pro" 
-                price="$49" 
-                generations="300 generations"
+                price="$37" 
+                billing="mo"
+                generations="400 generations/month"
                 description="For power sellers & agencies"
                 features={[
-                  "300 AI generations",
+                  "400 AI generations/month",
                   "Everything in Starter",
                   "Priority processing",
                   "Advanced cloning modes",
@@ -1190,6 +1210,25 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 onSelect={setUserTier}
                 onRequestCheckout={(priceId: string) => { setPendingPriceId(priceId); setShowEmailModal(true); }}
               />
+            </div>
+
+            {/* Top-up pill — for existing subscribers who need more */}
+            <div className="mt-8 flex justify-center">
+              <div className="bg-white border-2 border-dashed border-slate-200 rounded-3xl px-8 py-6 flex flex-col sm:flex-row items-center gap-4 shadow-lg max-w-md w-full">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
+                    <Zap size={20} className="text-amber-600"/>
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-900 text-sm">Need more credits?</p>
+                    <p className="text-xs text-slate-500 font-medium">+50 generations · Any plan · Never expires</p>
+                  </div>
+                </div>
+                <button onClick={() => { setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setShowEmailModal(true); }}
+                  className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-black text-sm px-6 py-3 rounded-xl transition-all shadow-md shadow-amber-100 whitespace-nowrap">
+                  Top Up — $9
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -1229,8 +1268,8 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
               <div className="space-y-3 mb-8">
                 {[
-                  { key: "starter" as const, name: "Starter", price: "$24", gens: "80 generations", desc: "Best for beginners" },
-                  { key: "pro" as const, name: "Pro", price: "$49", gens: "300 generations", desc: "Best for power sellers" },
+                  { key: "starter" as const, name: "Starter", price: "$17/mo", gens: "100 gens/month", desc: "Best for beginners" },
+                  { key: "pro" as const, name: "Pro", price: "$37/mo", gens: "400 gens/month", desc: "Best for power sellers" },
                 ].map(plan => (
                   <button key={plan.key} onClick={() => { setUserTier(plan.key); setShowUpgradeModal(false); }}
                     className={cn("w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between",
@@ -1253,6 +1292,55 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
               <button onClick={() => setShowUpgradeModal(false)}
                 className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black text-sm rounded-2xl transition-all">
+                Maybe Later
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Out of Credits Modal */}
+      <AnimatePresence>
+        {showOutOfCreditsModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setShowOutOfCreditsModal(false)}>
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl"
+              onClick={e => e.stopPropagation()}>
+              <div className="text-center mb-6">
+                <div className="text-5xl mb-4">🔋</div>
+                <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">You're out of generations</h3>
+                <p className="text-slate-500 text-sm font-medium">Choose an option to keep creating viral content</p>
+              </div>
+              <div className="space-y-3 mb-4">
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setShowEmailModal(true); }}
+                  className="w-full p-4 rounded-2xl border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 transition-all flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="font-black text-slate-900 flex items-center gap-2"><Zap size={14} className="text-amber-500"/> Quick Top-Up</p>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">+50 generations · never expires</p>
+                  </div>
+                  <span className="font-black text-amber-600 text-lg">$9</span>
+                </button>
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjEpB7i0tTYaLUQq8ijMg1"); setShowEmailModal(true); }}
+                  className="w-full p-4 rounded-2xl border-2 border-slate-200 bg-white hover:border-slate-400 transition-all flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="font-black text-slate-900">Starter Plan</p>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">100 generations/month</p>
+                  </div>
+                  <span className="font-black text-slate-900">$17<span className="text-xs text-slate-400 font-medium">/mo</span></span>
+                </button>
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjFQB7i0tTYaLU4gE4wyKD"); setShowEmailModal(true); }}
+                  className="w-full p-4 rounded-2xl border-2 border-rose-300 bg-rose-50 hover:bg-rose-100 transition-all flex items-center justify-between">
+                  <div className="text-left">
+                    <p className="font-black text-rose-700 flex items-center gap-2"><Crown size={14}/> Pro Plan</p>
+                    <p className="text-[11px] text-slate-400 font-medium mt-0.5">400 generations/month · Best value</p>
+                  </div>
+                  <span className="font-black text-rose-600">$37<span className="text-xs text-slate-400 font-medium">/mo</span></span>
+                </button>
+              </div>
+              <button onClick={() => setShowOutOfCreditsModal(false)}
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-black text-sm rounded-2xl transition-all">
                 Maybe Later
               </button>
             </motion.div>
@@ -1297,12 +1385,12 @@ function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: stri
   );
 }
 
-function PricingCard({ tier, price, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
+function PricingCard({ tier, price, billing, generations, description, features, isPopular, tierKey, currentTier, onSelect, onRequestCheckout }: any) {
   const [loading, setLoading] = useState(false);
 
   const PRICE_IDS: Record<string, string> = {
-    starter: "price_1TXDjcB7i0tTYaLUodi6N2Zy",
-    pro:     "price_1TXDk3B7i0tTYaLUBr36BDko",
+    starter: "price_1TZjEpB7i0tTYaLUQq8ijMg1",
+    pro:     "price_1TZjFQB7i0tTYaLU4gE4wyKD",
   };
 
   function handleBuy() {
@@ -1343,7 +1431,7 @@ function PricingCard({ tier, price, generations, description, features, isPopula
       <div className="text-center py-6 border-y border-slate-100">
         <div className="flex items-baseline justify-center gap-1">
           <span className="text-5xl font-black text-slate-900">{price}</span>
-          {!isFree && <span className="text-sm text-slate-400 font-medium">one-time</span>}
+          {!isFree && <span className="text-sm text-slate-400 font-medium">/{billing || "mo"}</span>}
         </div>
         <div className="mt-3 inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold">
           <Zap size={16} />
@@ -1375,7 +1463,7 @@ function PricingCard({ tier, price, generations, description, features, isPopula
             : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
         }`}
       >
-        {loading ? "Processing..." : isFree && isCurrent ? "Current Plan" : isFree ? "Get Started Free" : isCurrent ? "＋ Add More Credits" : "Buy Credits"}
+        {loading ? "Processing..." : isFree && isCurrent ? "Current Plan" : isFree ? "Get Started Free" : isCurrent ? "＋ Add More Credits" : "Subscribe"}
       </button>
     </div>
   );

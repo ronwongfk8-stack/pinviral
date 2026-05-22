@@ -46,9 +46,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server misconfiguration: missing Supabase env vars" });
   }
 
-  const PLAN_CONFIG = {
-    "price_1TXDjcB7i0tTYaLUodi6N2Zy": { plan: "starter", generations: 80 },
-    "price_1TXDk3B7i0tTYaLUBr36BDko": { plan: "pro",     generations: 300 },
+  const PLAN_CONFIG: Record<string, { plan: string; generations: number; billing: string }> = {
+    "price_1TZjEpB7i0tTYaLUQq8ijMg1": { plan: "starter", generations: 100, billing: "subscription" },
+    "price_1TZjFQB7i0tTYaLU4gE4wyKD": { plan: "pro",     generations: 400, billing: "subscription" },
+    "price_1TZjGBB7i0tTYaLUDtGZKvCr": { plan: "topup",   generations: 50,  billing: "topup" },
   };
 
   if (!email || !priceId) {
@@ -77,13 +78,16 @@ export default async function handler(req, res) {
     const existing = await existingRes.json();
     const existingUser = Array.isArray(existing) ? existing[0] : null;
 
-    // ── Step 2: Calculate new balances (ADD credits, don't reset) ─────────────
+    // ── Step 2: Calculate new balances ────────────────────────────────────────
     const currentLeft  = existingUser?.images_left  ?? 0;
     const currentTotal = existingUser?.images_total ?? 0;
-    const newLeft      = currentLeft  + plan.generations;
-    const newTotal     = currentTotal + plan.generations;
+    const isTopup = plan.billing === "topup";
+    // Top-up: always additive. Subscription: reset to plan amount (fresh month) + carry over remaining.
+    const newLeft  = isTopup ? currentLeft + plan.generations : plan.generations + currentLeft;
+    const newTotal = isTopup ? currentTotal + plan.generations : currentTotal + plan.generations;
+    const newPlan  = isTopup ? (existingUser?.plan ?? "free") : plan.plan; // topup keeps current plan tier
 
-    console.log("[activate] credits: existing left:", currentLeft, "+ new:", plan.generations, "= total left:", newLeft);
+    console.log("[activate] billing:", plan.billing, "existing left:", currentLeft, "+ new:", plan.generations, "= total left:", newLeft);
 
     const now = new Date().toISOString();
     let sbRes;
@@ -98,10 +102,10 @@ export default async function handler(req, res) {
           method: "PATCH",
           headers: { ...headers, "Prefer": "return=minimal" },
           body: JSON.stringify({
-            plan:         plan.plan,
+            plan:         newPlan,
             images_left:  newLeft,
             images_total: newTotal,
-            billing:      "one-time",
+            billing:      plan.billing,
             updated_at:   now,
           }),
         }
@@ -136,7 +140,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       success:     true,
       email:       cleanEmail,
-      plan:        plan.plan,
+      plan:        newPlan,
       generations: plan.generations,
       images_left: newLeft,
       images_total: newTotal,
