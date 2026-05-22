@@ -271,17 +271,44 @@ export default function App() {
   const handleProceedToCheckout = async () => {
     if (!emailInput.includes("@") || !pendingPriceId) return;
     setShowEmailModal(false);
-    setUserEmail(emailInput);
-    localStorage.setItem("pinviral_email", emailInput);
+    const email = emailInput;
+    setUserEmail(email);
+    localStorage.setItem("pinviral_email", email);
     try {
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId: pendingPriceId, email: emailInput }),
+        body: JSON.stringify({ priceId: pendingPriceId, email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      window.location.href = data.url;
+
+      // Open Stripe in a new tab — preserves uploaded image & work on this tab
+      const stripeTab = window.open(data.url, "_blank");
+      setPaymentSuccess(false);
+
+      // Poll Supabase every 3s — when plan activates, update state automatically
+      const pollInterval = setInterval(async () => {
+        try {
+          const r = await fetch(`/api/get-user?email=${encodeURIComponent(email)}`);
+          const d = await r.json();
+          const user = d.user;
+          if (user && user.plan !== "free" && user.images_left > 0) {
+            clearInterval(pollInterval);
+            setUserTier(user.plan as any);
+            setImagesLeft(user.images_left);
+            setImagesTotal(user.images_total);
+            setGenerationsUsed(user.images_total - user.images_left);
+            setPaymentSuccess(true);
+            setTimeout(() => setPaymentSuccess(false), 5000);
+            stripeTab?.close();
+          }
+        } catch { /* keep polling */ }
+      }, 3000);
+
+      // Stop polling after 10 minutes regardless
+      setTimeout(() => clearInterval(pollInterval), 600000);
+
     } catch (err: any) {
       alert("Payment failed: " + err.message);
     }
