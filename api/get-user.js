@@ -13,11 +13,12 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server misconfiguration: missing Supabase env vars" });
   }
 
-  console.log("[get-user] looking up:", cleanEmail);
-
   try {
+    // select= is explicit now — only the fields the frontend actually needs
+    // are returned. Previously select=* leaked stripe_customer_id and other
+    // internal fields to anyone who could guess/find an email.
     const sbRes = await fetch(
-      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=*`,
+      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=email,plan,billing,images_left,images_total,videos_left,videos_total`,
       {
         headers: {
           "apikey":        serviceKey,
@@ -27,7 +28,6 @@ export default async function handler(req, res) {
     );
 
     const data = await sbRes.json();
-    console.log("[get-user] status:", sbRes.status, "rows:", data?.length);
 
     if (!sbRes.ok || !data || data.length === 0) {
       return res.status(404).json({ error: "User not found" });

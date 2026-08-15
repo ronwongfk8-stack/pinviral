@@ -1,157 +1,64 @@
+// api/activate-plan.js
+//
+// This endpoint USED TO grant plan credits directly from client-supplied
+// email + priceId — which meant anyone could POST here with any email and
+// any priceId and get free credits with no payment. That logic has been
+// removed. Credits are now only ever granted by stripe-webhook.js, which
+// verifies the payment actually happened via Stripe's signed webhook event.
+//
+// This endpoint is now just a read-only "has the webhook processed yet?"
+// status check, so the frontend can poll it right after a Stripe redirect
+// instead of trying to activate the plan itself. It's a thin wrapper around
+// the same lookup get-user.js does.
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const { email, priceId, deduct, images_left: directLeft } = req.body;
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "email is required" });
 
-  // ── Deduct-only mode (called after each generation) ─────────────────────────
-  if (deduct && email && typeof directLeft === "number") {
-    const sUrl = (
-      process.env.VITE_PUBLIC_SUPABASE_URL ||
-      process.env.VITE_SUPABASE_URL ||
-      process.env.SUPABASE_URL
-    )?.replace(/\/+$/, "");
-    const sKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-    try {
-      await fetch(`${sUrl}/rest/v1/users?email=eq.${encodeURIComponent(email.toLowerCase().trim())}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "apikey": sKey,
-          "Authorization": `Bearer ${sKey}`,
-          "Prefer": "return=minimal",
-        },
-        body: JSON.stringify({ images_left: directLeft, updated_at: new Date().toISOString() }),
-      });
-    } catch (err) { console.error("[activate/deduct] error:", err.message); }
-    return res.status(200).json({ ok: true });
-  }
-
-  // Support all env var name variants
   const supabaseUrl = (
     process.env.VITE_PUBLIC_SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
     process.env.SUPABASE_URL
   )?.replace(/\/+$/, "");
-
   const serviceKey = (
     process.env.VITE_SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
-  console.log("[activate] email:", email, "priceId:", priceId);
-  console.log("[activate] url:", supabaseUrl?.slice(0, 40));
-  console.log("[activate] key length:", serviceKey?.length);
-
   if (!supabaseUrl || !serviceKey) {
     return res.status(500).json({ error: "Server misconfiguration: missing Supabase env vars" });
   }
 
-  const PLAN_CONFIG = {
-    "price_1TZjEpB7i0tTYaLUQq8ijMg1": { plan: "starter", generations: 100, billing: "subscription" },
-    "price_1TZjFQB7i0tTYaLU4gE4wyKD": { plan: "pro",     generations: 400, billing: "subscription" },
-    "price_1TZjGBB7i0tTYaLUDtGZKvCr": { plan: "topup",   generations: 50,  billing: "topup" },
-  };
-
-  if (!email || !priceId) {
-    return res.status(400).json({ error: `Missing — email:${email} priceId:${priceId}` });
-  }
-
-  const plan = PLAN_CONFIG[priceId];
-  if (!plan) {
-    return res.status(400).json({ error: `Unknown priceId: ${priceId}` });
-  }
-
-  const headers = {
-    "Content-Type":  "application/json",
-    "apikey":        serviceKey,
-    "Authorization": `Bearer ${serviceKey}`,
-  };
-
   const cleanEmail = email.toLowerCase().trim();
 
   try {
-    // ── Step 1: Check if user already exists ──────────────────────────────────
-    const existingRes = await fetch(
-      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=images_left,images_total`,
-      { headers }
+    const sbRes = await fetch(
+      `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}&select=plan,images_left,images_total`,
+      {
+        headers: {
+          apikey: serviceKey,
+          Authorization: `Bearer ${serviceKey}`,
+        },
+      }
     );
-    const existing = await existingRes.json();
-    const existingUser = Array.isArray(existing) ? existing[0] : null;
+    const rows = await sbRes.json();
+    const user = Array.isArray(rows) ? rows[0] : null;
 
-    // ── Step 2: Calculate new balances ────────────────────────────────────────
-    const currentLeft  = existingUser?.images_left  ?? 0;
-    const currentTotal = existingUser?.images_total ?? 0;
-    const isTopup = plan.billing === "topup";
-    // Top-up: always additive. Subscription: reset to plan amount (fresh month) + carry over remaining.
-    const newLeft  = isTopup ? currentLeft + plan.generations : plan.generations + currentLeft;
-    const newTotal = isTopup ? currentTotal + plan.generations : currentTotal + plan.generations;
-    const newPlan  = isTopup ? (existingUser?.plan ?? "free") : plan.plan; // topup keeps current plan tier
-
-    console.log("[activate] billing:", plan.billing, "existing left:", currentLeft, "+ new:", plan.generations, "= total left:", newLeft);
-
-    const now = new Date().toISOString();
-    let sbRes;
-
-    if (existingUser) {
-      // ── Step 3a: User exists — PATCH only the fields that change ─────────────
-      // Using PATCH by email avoids any primary-key ambiguity.
-      // We never touch images_left via a full replace — only additive PATCH.
-      sbRes = await fetch(
-        `${supabaseUrl}/rest/v1/users?email=eq.${encodeURIComponent(cleanEmail)}`,
-        {
-          method: "PATCH",
-          headers: { ...headers, "Prefer": "return=minimal" },
-          body: JSON.stringify({
-            plan:         newPlan,
-            images_left:  newLeft,
-            images_total: newTotal,
-            billing:      plan.billing,
-            updated_at:   now,
-          }),
-        }
-      );
-    } else {
-      // ── Step 3b: New user — INSERT ────────────────────────────────────────────
-      sbRes = await fetch(`${supabaseUrl}/rest/v1/users`, {
-        method: "POST",
-        headers: { ...headers, "Prefer": "return=minimal" },
-        body: JSON.stringify({
-          email:              cleanEmail,
-          plan:               plan.plan,
-          images_left:        newLeft,
-          images_total:       newTotal,
-          videos_left:        0,
-          videos_total:       0,
-          billing:            "one-time",
-          stripe_customer_id: cleanEmail,
-          activated_at:       now,
-          updated_at:         now,
-        }),
-      });
+    if (!user) {
+      // Webhook likely hasn't landed yet — frontend should keep polling.
+      return res.status(200).json({ ready: false });
     }
 
-    const text = await sbRes.text();
-    console.log("[activate] supabase status:", sbRes.status, "body:", text);
-
-    if (!sbRes.ok && sbRes.status !== 201) {
-      return res.status(500).json({ error: `Supabase error ${sbRes.status}: ${text}` });
-    }
-
-    res.status(200).json({
-      success:     true,
-      email:       cleanEmail,
-      plan:        newPlan,
-      generations: plan.generations,
-      images_left: newLeft,
-      images_total: newTotal,
+    return res.status(200).json({
+      ready: true,
+      plan: user.plan,
+      images_left: user.images_left,
+      images_total: user.images_total,
     });
-
   } catch (err) {
-    console.error("[activate] fetch error:", err.message);
+    console.error("[activate-plan/status] error:", err.message);
     res.status(500).json({ error: err.message });
   }
 }
-
-// ── Internal: handle deduct-only requests ─────────────────────────────────────
-// Called by frontend after each generation to keep Supabase in sync
-// Body: { email, deduct, images_left }
