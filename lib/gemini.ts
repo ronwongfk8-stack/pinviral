@@ -72,13 +72,16 @@ export async function geminiImage(
   const GEMINI_KEY = getKey();
   if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY not set in Vercel environment variables");
 
-  // Map incoming layout selection into the Gemini API enum format
-  let geminiAspectRatio = "AR_1_1"; 
-  if (aspectRatio === "9:16") {
-    geminiAspectRatio = "AR_9_16";
-  } else if (aspectRatio === "2:3") {
-    geminiAspectRatio = "AR_2_3";
-  }
+  // NOTE: `aspectRatio` inside generationConfig is NOT a valid field for this
+  // model — confirmed via a live 400 error: 'Unknown name "aspectRatio" at
+  // generation_config: Cannot find field.' Removed entirely rather than
+  // guess at a replacement field name we can't verify. The canvas already
+  // crops the result with object-cover to fit the 9:16/2:3 frame regardless
+  // of whatever native aspect ratio the model returns, so this doesn't
+  // break the visual output — it just means we're not requesting a specific
+  // ratio from the model itself. If a correctly-named field is confirmed
+  // later (check Google's current image-generation docs), it can be added
+  // back into the generationConfig object below.
 
   let b64 = "";
   let lastErr = "";
@@ -96,8 +99,7 @@ export async function geminiImage(
             body: JSON.stringify({
               contents: [{ role: "user", parts }],
               generationConfig: {
-                responseModalities: ["TEXT", "IMAGE"],
-                aspectRatio: geminiAspectRatio // Explicit dimension pass
+                responseModalities: ["TEXT", "IMAGE"]
               }
             })
           }
