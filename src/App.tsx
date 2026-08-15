@@ -1159,7 +1159,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                           fewer lines instead of stacking 3-4 lines tall. */}
                       <div className="absolute inset-0 p-4 flex flex-col justify-center items-center pointer-events-none"
                         style={{ transform: `translate(${titleTransform.x}%, ${titleTransform.y}%) rotate(${titleTransform.rotation}deg) scale(${titleScale})` }}>
-                        <div ref={titleRef} className="relative w-full pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
+                        <div ref={titleRef} className="relative w-full min-w-0 pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
                           onMouseDown={handleDragStart("title")} onTouchStart={handleDragStart("title")}>
                           <button type="button"
                             className="absolute -top-9 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-grab active:cursor-grabbing pointer-events-auto z-10"
@@ -1175,7 +1175,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                               <path d="M21 3 3 21M21 3v6M21 3h-6M3 21v-6M3 21h6"/>
                             </svg>
                           </button>
-                          <motion.div key={editableHeadline} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="px-1 text-center">
+                          <motion.div key={editableHeadline} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="px-1 text-center w-full">
                             {editingField === "headline" ? (
                               <input autoFocus value={editableHeadline}
                                 onChange={e => setEditableHeadline(e.target.value)}
@@ -1184,9 +1184,12 @@ No generic CTAs. Focus on social proof and value proposition.` });
                                 className="w-full bg-transparent text-white font-black text-2xl sm:text-4xl uppercase italic tracking-tighter leading-[0.85] text-center outline-none border-b-2 border-white/50 pb-1 [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%)]"/>
                             ) : (
                               <h2 onClick={startEditing("headline")}
-                                className="text-white font-black text-2xl sm:text-4xl uppercase italic tracking-tighter leading-[0.85] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] cursor-text">
-                                {editableHeadline.split(" ").map((word, i) => (
-                                  <span key={i} className={i % 3 === 0 ? "text-rose-500" : ""}>{word}{" "}</span>
+                                className="text-white font-black text-2xl sm:text-4xl uppercase italic tracking-tighter leading-[0.85] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] cursor-text w-full max-w-full whitespace-normal break-words" style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
+                                {editableHeadline.split(" ").map((word, i, arr) => (
+                                  <span key={i}>
+                                    <span className={i % 3 === 0 ? "text-rose-500" : ""}>{word}</span>
+                                    {i < arr.length - 1 ? " " : ""}
+                                  </span>
                                 ))}
                               </h2>
                             )}
@@ -1198,7 +1201,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                           fully independent from the headline above. */}
                       <div className="absolute inset-0 p-4 flex flex-col justify-center items-center pointer-events-none"
                         style={{ transform: `translate(${subtextTransform.x}%, ${subtextTransform.y}%) rotate(${subtextTransform.rotation}deg) scale(${subtextScale})` }}>
-                        <div ref={subtextRef} className="relative w-full pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
+                        <div ref={subtextRef} className="relative w-full min-w-0 pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
                           onMouseDown={handleDragStart("subtext")} onTouchStart={handleDragStart("subtext")}>
                           <button type="button"
                             className="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-grab active:cursor-grabbing pointer-events-auto z-10"
