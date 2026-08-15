@@ -394,7 +394,7 @@ For each angle provide:
 2. seoTitle (High-CTR pin title, e.g. "Why Every Home Needs This")
 3. hook (1-line attention grabber)
 4. psychology (emotional trigger explanation)
-5. aiImagePrompt (50-80 word descriptive scene)
+5. aiImagePrompt (60-90 words): a vivid, specific real-world SCENE describing WHERE and HOW this exact product is being used, held, or placed — tied to this angle's psychology. Describe the setting, any people/context, lighting, and mood. Example for a medical bag: "A confident doctor walks briskly through a modern hospital corridor, the bag swinging naturally from her hand, soft fluorescent lighting, motion blur suggesting urgency." Each of the 5 angles MUST describe a completely different scene/location/context from the other 4 — no repeated settings across angles. Describe only the new environment and context — do not redescribe or change the product itself, it stays exactly as shown in the reference photo.
 6. headlines (exactly 5 punchy variants)
 7. subtext (exactly 3 social-proof lines)
 8. cta
@@ -446,17 +446,29 @@ Return ONLY valid JSON, no markdown fences, no explanation:
     setIsGeneratingImage(true); setError(null);
     try {
       const activeAngle = opts?.angle || active.angles[angleIdx];
-      const base = activeAngle?.aiImagePrompt || "";
-      const visualPrompt = opts?.visualPromptOverride ?? customVisualPrompt;
-      const CLONING = {
-        direct:    "[IDENTICAL CLONE] Product shape, logo, color, branding 100% identical. Premium setting.",
-        stylized:  "[STYLIZED] Core product identity maintained, artistic/editorial environment.",
-        reimagine: "[REIMAGINE] Product as central element in a completely new conceptual context.",
-        variation: "[VARIATION] Subtle changes: new colorway or material finish.",
+      const sceneInstruction = (opts?.visualPromptOverride ?? customVisualPrompt) || activeAngle?.aiImagePrompt || "";
+
+      // The uploaded product photo is a fixed asset — the model should
+      // composite it into a new scene, not redesign or reinterpret it.
+      // cloningMode controls exactly how strict that lock is.
+      const IDENTITY_LOCK: Record<typeof cloningMode, string> = {
+        direct:
+          "The product in the reference image is a FIXED ASSET. Reproduce it with 100% visual accuracy — identical shape, proportions, color, material, texture, logo, and every design detail. Do not redesign, restyle, or alter the product in any way. Your only job is to place this exact product into the new scene described below, with realistic lighting, shadows, reflections, and perspective so it looks like a real photograph taken in that location.",
+        stylized:
+          "The product in the reference image must stay clearly recognizable — same shape, proportions, logo, and core design. You may adapt lighting/color grading to match a more artistic, editorial mood in the scene below, but do not change the product's actual design.",
+        reimagine:
+          "The product in the reference image must remain clearly recognizable as the same item (same shape and branding), even though it's being placed into a bold, unexpected new scene described below.",
+        variation:
+          "The product in the reference image should stay recognizable overall. Only apply the specific change requested in the scene description below (e.g. a different colorway or finish) — do not alter anything else about the product.",
       };
+
+      // Tie the generated scene back to the pin's actual headline, so the
+      // environment visually supports the copy instead of being generic.
       const finalPrompt =
-        `${CLONING[cloningMode]} Environment: ${visualPrompt || base}. ` +
-        `Professional Pinterest product photography. Sharp focus, beautiful bokeh, lifestyle aesthetic.`;
+        `${IDENTITY_LOCK[cloningMode]}\n\n` +
+        `Scene to place the product in: ${sceneInstruction}\n\n` +
+        (editableHeadline ? `This image is for a Pinterest pin with the headline "${editableHeadline}" — the scene, mood, and lighting should visually reinforce that headline.\n\n` : "") +
+        `Professional Pinterest product photography. Sharp focus on the product as the clear focal point, natural depth of field, lighting consistent with the described scene, lifestyle aesthetic. This must look like a real photograph, not an illustration or render.`;
 
       const fingerprint = await getFingerprint().catch(() => "");
       const payload: any = { prompt: finalPrompt, email: userEmail, fingerprint };
