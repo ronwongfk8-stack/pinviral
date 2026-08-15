@@ -833,7 +833,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
             )}
 
             {!strategy && (
-              <button onClick={generateStrategy} disabled={isLoading || !productName.trim() || !uploadedImage}
+              <button onClick={() => generateStrategy()} disabled={isLoading || !productName.trim() || !uploadedImage}
                 className="w-full py-5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black text-xl rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
                 {isLoading ? <Loader2 className="animate-spin" size={24}/> : <><Zap size={24}/> Output 5 Viral Angles &amp; SEO</>}
               </button>
