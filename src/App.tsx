@@ -586,6 +586,9 @@ No generic CTAs. Focus on social proof and value proposition.` });
   // completely independently of one another ──────────────────────────────────
   const handleDragStart = (target: "title" | "subtext" | "proof") => (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
+    e.preventDefault(); // blocks the browser's own native text-drag/selection gesture, which
+                         // otherwise fights with our positioning and renders a single-line
+                         // "ghost" of the text mid-drag
     setActiveDrag(target);
   };
   const handleDragEnd = () => setActiveDrag(null);
@@ -605,6 +608,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
   // handle; the badge doesn't rotate ───────────────────────────────────────────
   const handleRotateStart = (target: "title" | "subtext") => (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     setActiveRotate(target);
   };
   const handleRotateEnd = () => setActiveRotate(null);
@@ -626,6 +630,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
   // independent of position/rotation ──────────────────────────────────────────
   const handleResizeStart = (target: "title" | "subtext" | "proof") => (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
+    e.preventDefault();
     const ref = refFor(target);
     if (!ref) return;
     const rect = ref.getBoundingClientRect();
@@ -674,6 +679,20 @@ No generic CTAs. Focus on social proof and value proposition.` });
     setEditingField(field);
   };
   const stopEditing = () => setEditingField(null);
+
+  // ── Auto-fit headline font size — shrinks as the text gets longer so it
+  // settles on roughly 1-2 lines instead of wrapping into a tall stack.
+  // This is the BASE size before the manual resize-handle scale is applied
+  // on top of it, so you can still make it bigger/smaller from there. ────────
+  const headlineBaseFontSize = (() => {
+    const len = editableHeadline.length;
+    if (len <= 14) return 34;
+    if (len <= 20) return 29;
+    if (len <= 28) return 24;
+    if (len <= 38) return 19;
+    if (len <= 50) return 16;
+    return 13;
+  })();
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -1181,10 +1200,12 @@ No generic CTAs. Focus on social proof and value proposition.` });
                                 onChange={e => setEditableHeadline(e.target.value)}
                                 onBlur={stopEditing} onKeyDown={e => e.key === "Enter" && stopEditing()}
                                 onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
-                                className="w-full bg-transparent text-white font-black text-2xl sm:text-4xl uppercase italic tracking-tighter leading-[0.85] text-center outline-none border-b-2 border-white/50 pb-1 [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%)]"/>
+                                style={{ fontSize: `${headlineBaseFontSize}px` }}
+                                className="w-full bg-transparent text-white font-black uppercase italic tracking-tighter leading-[0.95] text-center outline-none border-b-2 border-white/50 pb-1 [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%)]"/>
                             ) : (
                               <h2 onClick={startEditing("headline")}
-                                className="text-white font-black text-2xl sm:text-4xl uppercase italic tracking-tighter leading-[0.85] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] cursor-text w-full max-w-full whitespace-normal break-words" style={{ overflowWrap: "break-word", wordBreak: "break-word" }}>
+                                style={{ fontSize: `${headlineBaseFontSize}px`, overflowWrap: "break-word", wordBreak: "break-word" }}
+                                className="text-white font-black uppercase italic tracking-tighter leading-[0.95] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] cursor-text w-full max-w-full whitespace-normal break-words">
                                 {editableHeadline.split(" ").map((word, i, arr) => (
                                   <span key={i}>
                                     <span className={i % 3 === 0 ? "text-rose-500" : ""}>{word}</span>
