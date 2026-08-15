@@ -83,7 +83,9 @@ export async function getOrCreateUser(email: string, fingerprint?: string, ip?: 
 
   // Log this claim regardless of outcome so future signups from this
   // device/IP are caught too, not just the second one.
-  await d.from("trial_claims").insert({ email: cleanEmail, fingerprint, ip }).catch(() => {});
+  try {
+    await d.from("trial_claims").insert({ email: cleanEmail, fingerprint, ip });
+  } catch { /* non-fatal — supabase-js query builders aren't real Promises, so try/catch not .catch() */ }
 
   return newUser;
 }
@@ -125,10 +127,14 @@ export async function deductVideoByEmail(email: string): Promise<boolean> {
 
 export async function refundImageByEmail(email: string): Promise<void> {
   const d = requireDb();
-  await d.rpc("refund_credit", { p_email: email.toLowerCase().trim(), p_field: "images_left" }).catch(() => {});
+  try {
+    await d.rpc("refund_credit", { p_email: email.toLowerCase().trim(), p_field: "images_left" });
+  } catch { /* non-fatal */ }
 }
 
 export async function refundVideoByEmail(email: string): Promise<void> {
   const d = requireDb();
-  await d.rpc("refund_credit", { p_email: email.toLowerCase().trim(), p_field: "videos_left" }).catch(() => {});
+  try {
+    await d.rpc("refund_credit", { p_email: email.toLowerCase().trim(), p_field: "videos_left" });
+  } catch { /* non-fatal */ }
 }
