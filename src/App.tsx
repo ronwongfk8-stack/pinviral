@@ -401,7 +401,7 @@ For each angle provide:
 9. pinDescription (100+ word SEO-optimised paragraph with keywords)
 10. hashtags (exactly 10 relevant tags)
 11. altText (accessibility description of the pin image)
-12. videoPrompts (exactly 5 scene scripts for 15-30s video)
+12. videoPrompts (array of exactly 5 strings): a complete, cohesive 30-45 second UGC-style video ad SCRIPT for this exact product, broken into 5 sequential scenes. Each array entry is ONE scene, formatted exactly like this: "[0-5s] VISUAL: <what's on screen — action, framing, setting> | VO: \"<the exact line spoken or shown as caption>\"". The 5 scenes must follow this arc: (1) scroll-stopping hook in the first 3 seconds, (2) relatable problem or pain point, (3) product reveal with the key benefit demonstrated visually, (4) social proof or a results moment, (5) a strong, specific call to action. Read the 5 entries together as ONE continuous script — consistent tone, natural spoken-language flow, no repeated phrasing between scenes. This is the actual shot list + voiceover script fed directly into AI video tools (Vid.ai, Submagic) — write it as production-ready, not as an abstract summary.
 
 NEGATIVE CONSTRAINTS: No generic phrases like "Shop for Trend", "Unlock Your Potential", "Elevate Your Style", "Buy Now".
 Return ONLY valid JSON, no markdown fences, no explanation:
@@ -1386,6 +1386,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                       <div className="grid grid-cols-1 gap-2">
                         <button
                           onClick={() => {
+                            // Vid AI gets the full shot list — visual direction + voiceover cues together.
                             const videoScript = strategy.angles[selectedAngleIndex]?.videoPrompts?.join("\n\n") || strategy.angles[selectedAngleIndex]?.aiImagePrompt || productName;
                             navigator.clipboard.writeText(videoScript);
                             window.open("https://vid.ai/?ref=wong44", "_blank");
@@ -1395,7 +1396,14 @@ No generic CTAs. Focus on social proof and value proposition.` });
                         </button>
                         <button
                           onClick={() => {
-                            const script = strategy.angles[selectedAngleIndex]?.pinDescription || editableSubtext || productName;
+                            // Submagic captions existing footage, so it wants the spoken
+                            // narration on its own — pull just the "VO: ..." lines out of
+                            // each scene rather than the visual shot directions.
+                            const scenes = strategy.angles[selectedAngleIndex]?.videoPrompts || [];
+                            const voOnly = scenes
+                              .map(s => { const m = s.match(/VO:\s*"([^"]+)"/); return m ? m[1] : s; })
+                              .join(" ");
+                            const script = voOnly || strategy.angles[selectedAngleIndex]?.pinDescription || editableSubtext || productName;
                             navigator.clipboard.writeText(script);
                             window.open("https://submagic.co/?via=wong86", "_blank");
                           }}
