@@ -5,7 +5,7 @@ import { getOrCreateUser, deductImageByEmail, refundImageByEmail } from "../lib/
 
 export const config = { runtime: "nodejs" };
 
-const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-2.0-flash"];
+const MODELS = ["gemini-2.5-flash", "gemini-2.5-pro"]; // confirmed via AI Studio's model reference for this project
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function getClientIp(req: VercelRequest): string {
