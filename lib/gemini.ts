@@ -1,6 +1,8 @@
 ﻿// lib/gemini.ts — all Gemini calls, server-side only
 
-const MODELS = ["gemini-2.5-flash", "gemini-2.0-flash-001", "gemini-2.0-flash"];
+// Confirmed via AI Studio's model reference for this project:
+const TEXT_MODELS  = ["gemini-2.5-flash", "gemini-2.5-pro"];
+const IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image"];
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function getKey(): string {
@@ -19,7 +21,7 @@ export async function geminiText(
     ? { generationConfig: { responseMimeType: "application/json" } }
     : {};
 
-  for (const model of MODELS) {
+  for (const model of TEXT_MODELS) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const res = await fetch(
@@ -79,12 +81,13 @@ export async function geminiImage(
   }
 
   let b64 = "";
-  for (const name of MODELS) {
+  let lastErr = "";
+  for (const name of IMAGE_MODELS) {
     for (let att = 0; att < 3; att++) {
       try {
         const parts: any[] = [{ text: prompt }];
         if (imageB64 && imageMime) parts.push({ inlineData: { data: imageB64, mimeType: imageMime } });
-        
+
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${name}:generateContent?key=${GEMINI_KEY}`,
           {
@@ -106,8 +109,20 @@ export async function geminiImage(
             const found = p.inlineData?.data || p.inline_data?.data;
             if (found) { b64 = found; break; }
           }
+          if (!b64) {
+            // Request succeeded but no image came back — surface WHY (e.g. a
+            // text-only refusal, safety block, or finishReason) instead of
+            // silently falling through to a generic error.
+            const finishReason = d?.candidates?.[0]?.finishReason;
+            const textPart = (d?.candidates?.[0]?.content?.parts || []).find((p: any) => typeof p.text === "string");
+            lastErr = `[${name}] No image in response. finishReason=${finishReason || "unknown"}${textPart ? `, model said: "${textPart.text.slice(0, 200)}"` : ""}`;
+            console.error("[geminiImage]", lastErr, JSON.stringify(d).slice(0, 500));
+          }
         } else {
-          if (res.status === 429) throw new Error("Quota exceeded");
+          const errData = await res.json().catch(() => ({}));
+          lastErr = `[${name}] HTTP ${res.status}: ${errData?.error?.message || "unknown error"}`;
+          console.error("[geminiImage]", lastErr);
+          if (res.status === 429) throw new Error(lastErr);
           if (res.status === 503 && att < 2) { await sleep(3000 * (att + 1)); continue; }
           break;
         }
@@ -116,11 +131,13 @@ export async function geminiImage(
         break;
       } catch (e: any) {
         const msg = e.message || "";
-        if (msg.includes("Quota")) throw e;
+        lastErr = msg || lastErr;
+        console.error("[geminiImage] exception:", lastErr);
+        if (msg.includes("Quota") || msg.includes("429")) throw e;
         if (att < 2 && (msg.includes("503") || msg.includes("UNAVAILABLE"))) { await sleep(3000 * (att + 1)); continue; }
         break;
       }
     }
   }
-  throw new Error("Image AI temporarily offline. Try again.");
+  throw new Error(lastErr || "Image AI temporarily offline. Try again.");
 }
