@@ -77,7 +77,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
   const sig = req.headers["stripe-signature"];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  // Checks both naming variants — your Vercel project has this stored as
+  // VITE_STRIPE_WEBHOOK_SECRET (not the plain name), which is why this was
+  // coming through as undefined before.
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || process.env.VITE_STRIPE_WEBHOOK_SECRET;
   const rawBody = await readRawBody(req);
 
   let event;
