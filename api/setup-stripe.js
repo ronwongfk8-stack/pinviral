@@ -26,8 +26,9 @@ async function stripePost(path, params) {
 }
 
 const PLANS = [
-  { key: "starter", name: "PinViral Starter — 75 Generations", amount: 1900 },
-  { key: "pro",     name: "PinViral Pro — 250 Generations",    amount: 3900 },
+  // Kept in sync with PLAN_DEFS in lib/db.ts and PLAN_CONFIG in stripe-webhook.js
+  { key: "starter", name: "PinViral Starter — 100 Generations", amount: 1900 },
+  { key: "pro",     name: "PinViral Pro — 400 Generations",     amount: 3900 },
 ];
 
 async function fetchExistingPriceIds() {
