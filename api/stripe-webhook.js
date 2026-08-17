@@ -100,6 +100,14 @@ export default async function handler(req, res) {
   // actually happened during testing — one top-up got processed 5x).
   // We record each event.id the first time it's handled; if we see it
   // again, we skip straight to a 200 OK without touching any credits.
+  //
+  // IMPORTANT: PostgREST returns HTTP 201 for this insert EITHER WAY —
+  // whether the row was newly inserted OR silently ignored as a duplicate.
+  // Status code alone can't tell them apart (this was the actual bug —
+  // confirmed via testing: only one row ever existed in the table, proving
+  // the database-level dedup worked, but the status-code check didn't).
+  // The real signal is the response BODY: a fresh insert returns the row
+  // (non-empty array); an ignored duplicate returns an empty array.
   const { sUrl: idemUrl, sKey: idemKey } = supabaseEnv();
   try {
     const insertRes = await fetch(`${idemUrl}/rest/v1/processed_webhook_events?on_conflict=event_id`, {
@@ -108,13 +116,13 @@ export default async function handler(req, res) {
         "Content-Type": "application/json",
         apikey: idemKey,
         Authorization: `Bearer ${idemKey}`,
-        Prefer: "return=minimal,resolution=ignore-duplicates",
+        Prefer: "return=representation,resolution=ignore-duplicates",
       },
       body: JSON.stringify({ event_id: event.id }),
     });
-    // 201 = newly inserted, first time seeing this event → proceed normally.
-    // 200 with resolution=ignore-duplicates = already existed → already processed, skip.
-    if (insertRes.status !== 201) {
+    const inserted = await insertRes.json().catch(() => []);
+    const wasActuallyInserted = Array.isArray(inserted) && inserted.length > 0;
+    if (!wasActuallyInserted) {
       console.log("[webhook] duplicate event, already processed:", event.id);
       return res.status(200).json({ received: true, duplicate: true });
     }
