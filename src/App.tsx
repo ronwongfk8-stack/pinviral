@@ -963,7 +963,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   <span className="text-lg">⚠️</span>
                   <span className="text-xs font-black text-amber-700">Only <span className="text-amber-900">{generationsLeft}</span> generations left!</span>
                 </div>
-                <button onClick={() => { setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                <button onClick={() => { setPendingPriceId("price_1U5FVUB7i0tTYaLUtyYBs8GR"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
                   className="text-[10px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-full transition-all shrink-0">
                   Top Up $9
                 </button>
@@ -1537,7 +1537,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                     <p className="text-xs text-slate-500 font-medium">+50 generations · Any plan · Never expires</p>
                   </div>
                 </div>
-                <button onClick={() => { setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                <button onClick={() => { setPendingPriceId("price_1U5FVUB7i0tTYaLUtyYBs8GR"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
                   className="shrink-0 bg-amber-500 hover:bg-amber-600 text-white font-black text-sm px-6 py-3 rounded-xl transition-all shadow-md shadow-amber-100 whitespace-nowrap">
                   Top Up — $9
                 </button>
@@ -1627,7 +1627,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 <p className="text-slate-500 text-sm font-medium">Choose an option to keep creating viral content</p>
               </div>
               <div className="space-y-3 mb-4">
-                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjGBB7i0tTYaLUDtGZKvCr"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1U5FVUB7i0tTYaLUtyYBs8GR"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
                   className="w-full p-4 rounded-2xl border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 transition-all flex items-center justify-between">
                   <div className="text-left">
                     <p className="font-black text-slate-900 flex items-center gap-2"><Zap size={14} className="text-amber-500"/> Quick Top-Up</p>
@@ -1635,7 +1635,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                   <span className="font-black text-amber-600 text-lg">$9</span>
                 </button>
-                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjEpB7i0tTYaLUQq8ijMg1"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TXFH8B7i0tTYaLUEEUQmN5i"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
                   className="w-full p-4 rounded-2xl border-2 border-slate-200 bg-white hover:border-slate-400 transition-all flex items-center justify-between">
                   <div className="text-left">
                     <p className="font-black text-slate-900">Starter Plan</p>
@@ -1643,7 +1643,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                   </div>
                   <span className="font-black text-slate-900">$17<span className="text-xs text-slate-400 font-medium">/mo</span></span>
                 </button>
-                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TZjFQB7i0tTYaLU4gE4wyKD"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                <button onClick={() => { setShowOutOfCreditsModal(false); setPendingPriceId("price_1TXFGtB7i0tTYaLUas8gyCm4"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
                   className="w-full p-4 rounded-2xl border-2 border-rose-300 bg-rose-50 hover:bg-rose-100 transition-all flex items-center justify-between">
                   <div className="text-left">
                     <p className="font-black text-rose-700 flex items-center gap-2"><Crown size={14}/> Pro Plan</p>
@@ -1702,8 +1702,8 @@ function PricingCard({ tier, price, billing, generations, description, features,
   const [loading, setLoading] = useState(false);
 
   const PRICE_IDS: Record<string, string> = {
-    starter: "price_1TZjEpB7i0tTYaLUQq8ijMg1",
-    pro:     "price_1TZjFQB7i0tTYaLU4gE4wyKD",
+    starter: "price_1TXFH8B7i0tTYaLUEEUQmN5i",
+    pro:     "price_1TXFGtB7i0tTYaLUas8gyCm4",
   };
 
   function handleBuy() {
