@@ -93,6 +93,38 @@ export default async function handler(req, res) {
 
   console.log("[webhook] event:", event.type);
 
+  // ── Idempotency check — Stripe retries failed/timed-out deliveries
+  // automatically, and this endpoint can also be manually resent from the
+  // Stripe Dashboard. Without this check, the SAME event being delivered
+  // more than once would grant credits every single time (confirmed this
+  // actually happened during testing — one top-up got processed 5x).
+  // We record each event.id the first time it's handled; if we see it
+  // again, we skip straight to a 200 OK without touching any credits.
+  const { sUrl: idemUrl, sKey: idemKey } = supabaseEnv();
+  try {
+    const insertRes = await fetch(`${idemUrl}/rest/v1/processed_webhook_events?on_conflict=event_id`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: idemKey,
+        Authorization: `Bearer ${idemKey}`,
+        Prefer: "return=minimal,resolution=ignore-duplicates",
+      },
+      body: JSON.stringify({ event_id: event.id }),
+    });
+    // 201 = newly inserted, first time seeing this event → proceed normally.
+    // 200 with resolution=ignore-duplicates = already existed → already processed, skip.
+    if (insertRes.status !== 201) {
+      console.log("[webhook] duplicate event, already processed:", event.id);
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+  } catch (err) {
+    // If the idempotency table itself is unreachable, log it but don't block
+    // legitimate payment processing over an infrastructure hiccup — better
+    // to risk a rare duplicate than to silently drop a real payment.
+    console.error("[webhook] idempotency check failed, proceeding anyway:", err.message);
+  }
+
   // ── First-time purchase / top-up — THIS is the actual proof of payment ────
   // Stripe only sends this after the customer has successfully paid, and the
   // event is signature-verified above, so unlike the old client-triggered
