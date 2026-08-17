@@ -13,8 +13,8 @@ export default async function handler(req, res) {
     const cancelUrl  = `${req.headers.origin}/?payment=cancelled`;
 
     const SUBSCRIPTION_PRICES = [
-      "price_1TZjEpB7i0tTYaLUQq8ijMg1", // Starter $17/mo
-      "price_1TZjFQB7i0tTYaLU4gE4wyKD", // Pro $37/mo
+      "price_1TXFH8B7i0tTYaLUEEUQmN5i", // Starter $17/mo
+      "price_1TXFGtB7i0tTYaLUas8gyCm4", // Pro $37/mo
     ];
     const mode = SUBSCRIPTION_PRICES.includes(priceId) ? "subscription" : "payment";
 

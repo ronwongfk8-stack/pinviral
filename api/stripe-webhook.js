@@ -6,15 +6,15 @@ const stripe = new Stripe(process.env.VITE_STRIPE_SECRET_KEY, { apiVersion: "202
 // (Kept identical to the old activate-plan.js PLAN_CONFIG so behavior for
 // existing customers doesn't change — just where it's verified.)
 const PLAN_CONFIG = {
-  "price_1TZjEpB7i0tTYaLUQq8ijMg1": { plan: "starter", generations: 100, billing: "subscription" },
-  "price_1TZjFQB7i0tTYaLU4gE4wyKD": { plan: "pro",     generations: 400, billing: "subscription" },
-  "price_1TZjGBB7i0tTYaLUDtGZKvCr": { plan: "topup",   generations: 50,  billing: "topup" },
+  "price_1TXFH8B7i0tTYaLUEEUQmN5i": { plan: "starter", generations: 100, billing: "subscription" },
+  "price_1TXFGtB7i0tTYaLUas8gyCm4": { plan: "pro",     generations: 400, billing: "subscription" },
+  "price_1U5FVUB7i0tTYaLUtyYBs8GR": { plan: "topup",   generations: 50,  billing: "topup" },
 };
 
 // price → what a MONTHLY RENEWAL resets credits to.
 const RENEWAL_CREDITS = {
-  "price_1TZjEpB7i0tTYaLUQq8ijMg1": { plan: "starter", generations: 100 },
-  "price_1TZjFQB7i0tTYaLU4gE4wyKD": { plan: "pro",     generations: 400 },
+  "price_1TXFH8B7i0tTYaLUEEUQmN5i": { plan: "starter", generations: 100 },
+  "price_1TXFGtB7i0tTYaLUas8gyCm4": { plan: "pro",     generations: 400 },
 };
 
 function supabaseEnv() {
