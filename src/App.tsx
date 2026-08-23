@@ -158,6 +158,18 @@ export default function App() {
   const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
   const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
+  // Landing page hero showcase — cycles through revealing 5 placeholder pin
+  // cards on a loop, with a brief pause once all 5 are showing before it
+  // resets. Replace the 5 placeholder <div> blocks below with real <img>
+  // tags once you have actual generated pin examples to show.
+  const [showcaseStep, setShowcaseStep]             = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setShowcaseStep(s => (s >= 8 ? 0 : s + 1)); // 0-5 reveal, 6-8 hold, then reset
+    }, 600);
+    return () => clearInterval(interval);
+  }, []);
+  const showcaseReveal = Math.min(showcaseStep, 5);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
   const [productUrl, setProductUrl]                 = useState("");
   const [customVisualPrompt, setCustomVisualPrompt] = useState("");
@@ -880,14 +892,64 @@ No generic CTAs. Focus on social proof and value proposition.` });
         {/* ── Input zone ─────────────────────────────────────────────────────── */}
         <section className={cn("transition-all duration-700 max-w-4xl mx-auto", strategy ? "mb-8 opacity-40 scale-95 pointer-events-none" : "mb-16")}>
           <div className="text-center mb-10">
-            <h4 className="text-rose-600 font-black uppercase tracking-[0.3em] text-[10px] mb-2">What Are You Selling Today?</h4>
+            <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 text-[11px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest mb-4">
+              <Sparkles size={13}/> 1 photo becomes 5 pins
+            </div>
             <h2 className="text-4xl sm:text-5xl font-black text-slate-900 mb-4 tracking-tighter">
-              {strategy ? "Strategy Ready" : "Start Your Viral Campaign"}
+              {strategy ? "Strategy Ready" : "Turn one product photo into scroll-stopping pins"}
             </h2>
             <p className="text-slate-500 text-lg font-medium">
-              Upload product photo. Generate 5 professional angles. <span className="text-rose-600 italic">Go Viral.</span>
+              No design skills, no Canva, no hours lost. <span className="text-rose-600 italic">Go Viral.</span>
             </p>
           </div>
+
+          {/* ── Before/after showcase — replace the 5 placeholder blocks below with
+              real <img src="..."/> tags once you have actual generated examples. ── */}
+          {!strategy && (
+            <div className="bg-slate-50 rounded-[2rem] p-6 sm:p-8 mb-10 border border-slate-100">
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_2.2fr] gap-4 sm:gap-6 items-center">
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">Your photo</p>
+                  <div className="bg-slate-200 rounded-2xl aspect-[3/4] flex items-center justify-center">
+                    <ImageIcon size={32} className="text-slate-400"/>
+                  </div>
+                </div>
+
+                <ArrowRight size={22} className="text-slate-300 mx-auto rotate-90 sm:rotate-0"/>
+
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">5 pin variations</p>
+                  <div className="grid grid-cols-5 gap-2">
+                    {[
+                      "bg-gradient-to-br from-rose-400 to-rose-600",
+                      "bg-gradient-to-br from-teal-400 to-teal-600",
+                      "bg-gradient-to-br from-pink-400 to-pink-600",
+                      "bg-gradient-to-br from-violet-400 to-violet-600",
+                      "bg-gradient-to-br from-amber-400 to-amber-600",
+                    ].map((grad, i) => (
+                      <div key={i}
+                        className={cn("rounded-xl aspect-[3/4] relative overflow-hidden transition-all duration-500", grad,
+                          showcaseReveal > i ? "opacity-100 scale-100" : "opacity-0 scale-90")}>
+                        <div className="absolute bottom-0 inset-x-0 h-1/3 bg-black/30"/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-center gap-6 flex-wrap mt-6 pt-6 border-t border-slate-200">
+                <span className="flex items-center gap-1.5 text-[13px] text-slate-500 font-medium">
+                  <Zap size={15}/> Under 2 minutes
+                </span>
+                <span className="flex items-center gap-1.5 text-[13px] text-slate-500 font-medium">
+                  <Palette size={15}/> No design skills needed
+                </span>
+                <span className="flex items-center gap-1.5 text-[13px] text-slate-500 font-medium">
+                  <ImageIcon size={15}/> Product never changes
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
