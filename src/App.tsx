@@ -514,13 +514,18 @@ Return ONLY valid JSON, no markdown fences, no explanation:
           "The product in the reference image should stay recognizable overall. Only apply the specific change requested in the scene description below (e.g. a different colorway or finish) — do not alter anything else about the product.",
       };
 
-      // Tie the generated scene back to the pin's actual headline, so the
-      // environment visually supports the copy instead of being generic.
+      // Tie the generated scene back to the pin's mood/theme WITHOUT quoting
+      // the literal headline text — quoting it was causing Gemini to render
+      // its own caption/title text directly into the image (confirmed via
+      // testing: generated images had a second, AI-authored title baked in,
+      // duplicating the app's own HTML text overlay). The explicit no-text
+      // instruction below is the other half of the fix.
       const finalPrompt =
         `${IDENTITY_LOCK[cloningMode]}\n\n` +
         `Scene to place the product in: ${sceneInstruction}\n\n` +
-        (editableHeadline ? `This image is for a Pinterest pin with the headline "${editableHeadline}" — the scene, mood, and lighting should visually reinforce that headline.\n\n` : "") +
-        `Professional Pinterest product photography. Sharp focus on the product as the clear focal point, natural depth of field, lighting consistent with the described scene, lifestyle aesthetic. This must look like a real photograph, not an illustration or render.`;
+        `IMPORTANT — the identity lock above applies ONLY to the product itself. The BACKGROUND, SETTING, and ENVIRONMENT must be completely different from the reference photo — do not reuse its plain/studio/neutral backdrop. Fully commit to the new scene described above: real location, real lighting, real atmosphere, as different from the original photo's background as possible while keeping the product itself identical.\n\n` +
+        `CRITICAL: Do NOT include any text, words, letters, captions, titles, logos (other than the product's own existing branding), watermarks, or typography anywhere in this image. This must be a pure photographic scene with nothing written on it — all text will be added separately afterward as a design overlay, so any text you render into the image will look duplicated and broken.\n\n` +
+        `Professional Pinterest product photography. Sharp focus on the product as the clear focal point, natural depth of field, lighting consistent with the described scene, lifestyle aesthetic. This must look like a real photograph, not an illustration, render, poster, or advertisement graphic.`;
 
       const fingerprint = await getFingerprint().catch(() => "");
       const payload: any = { prompt: finalPrompt, email: opts?.emailOverride || userEmail, fingerprint };
