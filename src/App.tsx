@@ -13,7 +13,7 @@ import {
   Sparkles, Copy, Check, Image as ImageIcon, Loader2, ArrowRight,
   Upload, Download, RefreshCw, Zap, Target, Search, ExternalLink,
   Eye, AlertCircle, Star, Palette, Plus, Hash, Accessibility,
-  User, Crown, RotateCw
+  User, Crown, RotateCw, Play
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { clsx, type ClassValue } from "clsx";
@@ -157,18 +157,10 @@ export default function App() {
   const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
   const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
   const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
-  // Landing page hero showcase — cycles through revealing 5 placeholder pin
-  // cards on a loop, with a brief pause once all 5 are showing before it
-  // resets. Replace the 5 placeholder <div> blocks below with real <img>
-  // tags once you have actual generated pin examples to show.
-  const [showcaseStep, setShowcaseStep]             = useState(0);
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setShowcaseStep(s => (s >= 8 ? 0 : s + 1)); // 0-5 reveal, 6-8 hold, then reset
-    }, 600);
-    return () => clearInterval(interval);
-  }, []);
-  const showcaseReveal = Math.min(showcaseStep, 5);
+  // Landing page hero — click-to-play demo video (real sound, real controls,
+  // not an autoplay background loop).
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoStarted, setVideoStarted]             = useState(false);
   const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
   const [productUrl, setProductUrl]                 = useState("");
   const [customVisualPrompt, setCustomVisualPrompt] = useState("");
@@ -903,38 +895,30 @@ No generic CTAs. Focus on social proof and value proposition.` });
             </p>
           </div>
 
-          {/* ── Before/after showcase — real example: one uploaded product
-              photo becomes 5 distinct pin environments. ── */}
+          {/* ── Demo video — click to play with real sound and controls,
+              not an autoplay background loop. ── */}
           {!strategy && (
             <div className="bg-slate-50 rounded-[2rem] p-6 sm:p-8 mb-10 border border-slate-100">
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_2.2fr] gap-4 sm:gap-6 items-center">
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">Your photo</p>
-                  <div className="rounded-2xl aspect-[3/4] overflow-hidden bg-slate-200">
-                    <img src="/showcase/original.jpg" alt="Original uploaded product photo" className="w-full h-full object-cover"/>
-                  </div>
-                </div>
-
-                <ArrowRight size={22} className="text-slate-300 mx-auto rotate-90 sm:rotate-0"/>
-
-                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center mb-2">5 pin variations</p>
-                  <div className="grid grid-cols-5 gap-2">
-                    {[
-                      "/showcase/pin-1.jpg",
-                      "/showcase/pin-2.jpg",
-                      "/showcase/pin-3.jpg",
-                      "/showcase/pin-4.jpg",
-                      "/showcase/pin-5.jpg",
-                    ].map((src, i) => (
-                      <div key={i}
-                        className={cn("rounded-xl aspect-[3/4] relative overflow-hidden transition-all duration-500 bg-slate-200",
-                          showcaseReveal > i ? "opacity-100 scale-100" : "opacity-0 scale-90")}>
-                        <img src={src} alt={`Generated pin variation ${i + 1}`} className="w-full h-full object-cover"/>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="relative rounded-2xl overflow-hidden bg-black aspect-video max-w-2xl mx-auto shadow-xl">
+                <video
+                  ref={videoRef}
+                  src="/showcase/demo.mp4"
+                  poster="/showcase/demo-poster.jpg"
+                  controls={videoStarted}
+                  playsInline
+                  onPlay={() => setVideoStarted(true)}
+                  className="w-full h-full object-contain bg-black"
+                />
+                {!videoStarted && (
+                  <button
+                    onClick={() => videoRef.current?.play()}
+                    aria-label="Play demo video"
+                    className="absolute inset-0 flex items-center justify-center bg-black/20 hover:bg-black/30 transition-all group">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-xl group-hover:scale-105 transition-transform">
+                      <Play size={26} className="text-rose-600 ml-1" fill="currentColor"/>
+                    </div>
+                  </button>
+                )}
               </div>
 
               <div className="flex justify-center gap-6 flex-wrap mt-6 pt-6 border-t border-slate-200">
