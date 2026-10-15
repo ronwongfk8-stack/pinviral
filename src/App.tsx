@@ -8,7 +8,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { toPng } from "html-to-image";
+import JSZip from "jszip";
 import {
   Sparkles, Copy, Check, Image as ImageIcon, Loader2, ArrowRight,
   Upload, Download, RefreshCw, Zap, Target, Search, ExternalLink,
@@ -20,6 +20,13 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { supabase } from "./supabase";
 import { getFingerprint } from "./lib/fingerprint";
+import { Navbar } from "./studio/components/Navbar";
+import { CreationWorkflowBar } from "./studio/components/CreationWorkflowBar";
+import { PinCard } from "./studio/components/PinCard";
+import { PinterestPreviewModal } from "./studio/components/PinterestPreviewModal";
+import { getDefaultPins, PHOTOGRAPHIC_SCENES } from "./studio/data/samples";
+import type { AspectRatio, PinItem, TextOverlaySettings } from "./studio/types";
+import { getDimensions, drawGeneratedPhoto, drawTextOverlay } from "./studio/utils/canvasRenderer";
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -68,7 +75,7 @@ interface ViralAngle {
   title: string; seoTitle: string; hook: string; psychology: string;
   headlines: string[]; subtext: string[]; cta: string; pinDescription: string;
   hashtags: string[]; altText: string;
-  aiImagePrompt: string; videoPrompts: string[];
+  aiImagePrompt: string;
 }
 interface PinStrategy { angles: ViralAngle[]; }
 
@@ -84,88 +91,76 @@ const extractAndParseJSON = (text: string): any => {
   }
 };
 
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Resize + re-encode the uploaded photo so requests stay well under Vercel's 4.5 MB body limit. */
+async function prepareImageForApi(src: string, maxSize = 1536): Promise<{ b64: string; mime: string }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("Could not read the product image."));
+    im.src = src;
+  });
+  const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.naturalWidth * scale);
+  canvas.height = Math.round(img.naturalHeight * scale);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
+  return { b64: dataUrl.split(",")[1], mime: "image/jpeg" };
+}
+
+/** Same identity lock the live app used ("direct" mode): the product is a fixed asset, only the scene changes. */
+function buildImagePrompt(scene: string): string {
+  return (
+    "The product in the reference image is a FIXED ASSET. Reproduce it with 100% visual accuracy \u2014 identical shape, proportions, color, material, texture, logo, and every design detail. Do not redesign, restyle, or alter the product in any way. If a person is wearing or holding the product, keep the same person and the same product, and only change their pose and the location. Your only job is to place this exact product into the new scene described below, with realistic lighting, shadows, reflections, and perspective so it looks like a real photograph taken in that location.\n\n" +
+    `Scene to place the product in: ${scene}\n\n` +
+    "IMPORTANT \u2014 the identity lock above applies ONLY to the product itself. The BACKGROUND, SETTING, and ENVIRONMENT must be completely different from the reference photo \u2014 do not reuse its plain/studio/neutral backdrop. Fully commit to the new scene: real location, real lighting, real atmosphere. This is NOT a cut-out and NOT a product pasted on a flat or solid colour background.\n\n" +
+    "CRITICAL: Do NOT include any text, words, letters, captions, titles, logos (other than the product's own existing branding), watermarks, or typography anywhere in this image. All text is added separately afterward as a design overlay.\n\n" +
+    "Professional Pinterest product photography. Sharp focus on the product as the clear focal point, natural depth of field, lighting consistent with the described scene, lifestyle aesthetic. This must look like a real photograph, not an illustration, render, poster, or advertisement graphic."
+  );
+}
+
+function socialBadgeText(sp: { stars?: number; reviews?: string; sold?: string } | null): string {
+  if (!sp) return "";
+  const bits: string[] = [];
+  if (sp.stars) bits.push(`\u2605 ${sp.stars}`);
+  if (sp.reviews) bits.push(String(sp.reviews));
+  else if (sp.sold) bits.push(String(sp.sold));
+  return bits.join(" \u00b7 ");
+}
+
 // ─── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [productName, setProductName]               = useState("");
-  const [isLoading, setIsLoading]                     = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage]     = useState(false);
-  const [isEnhancingSEO, setIsEnhancingSEO]           = useState(false);
-  const [strategy, setStrategy]                       = useState<PinStrategy | null>(null);
-  const [selectedAngleIndex, setSelectedAngleIndex] = useState<number | null>(null);
-  // Three fully independent elements: headline ("title*" identifiers below),
-  // subtext, and the social-proof badge. Each has its own position; headline
-  // and subtext also get their own rotation + resize. Defaults are spaced
-  // apart top-to-bottom so nothing overlaps before you've dragged anything.
-  const [titleTransform, setTitleTransform]           = useState({ x: 0, y: -12, rotation: 0 });
-  const [titleScale, setTitleScale]                   = useState(1);
-  const [subtextTransform, setSubtextTransform]       = useState({ x: 0, y: 16, rotation: 0 });
-  const [subtextScale, setSubtextScale]               = useState(1);
-  const [proofTransform, setProofTransform]           = useState({ x: 0, y: 33 });
-  const [proofScale, setProofScale]                   = useState(1);
-  const [activeDrag, setActiveDrag]                   = useState<null | "title" | "subtext" | "proof">(null);
-  const [activeRotate, setActiveRotate]               = useState<null | "title" | "subtext">(null);
-  const [activeResize, setActiveResize]               = useState<null | "title" | "subtext" | "proof">(null);
-  const resizeStartRef = useRef<{ dist: number; scale: number }>({ dist: 0, scale: 1 });
-  const [editingField, setEditingField]               = useState<null | "headline" | "subtext">(null);
-  // Text styling — headline and subtext now each have their OWN color, since
-  // one shared color doesn't work well when the background varies a lot.
-  // Font style is shared across both (including two new effects: hollow
-  // outline-only text, and outline = filled text with a dark stroke).
-  const [headlineColor, setHeadlineColor]             = useState("#ffffff");
-  const [subtextColor, setSubtextColor]               = useState("#ffffff");
-  const [fontStyle, setFontStyle]                     = useState<"sans" | "serif" | "mono" | "display" | "elegant" | "hollow" | "outline">("sans");
-  const [highlightBgColor, setHighlightBgColor]       = useState("#000000");
-  const [highlightOpacity, setHighlightOpacity]       = useState(0.8);
-  const FONT_FAMILIES: Record<typeof fontStyle, string> = {
-    sans: "inherit",
-    serif: "Georgia, 'Times New Roman', serif",
-    mono: "'Courier New', Courier, monospace",
-    display: "Impact, 'Arial Black', sans-serif",
-    elegant: "'Palatino Linotype', 'Book Antiqua', Palatino, serif",
-    hollow: "Impact, 'Arial Black', sans-serif",
-    outline: "Impact, 'Arial Black', sans-serif",
-  };
-  // Builds the actual style object for a text element given its own color.
-  // hollow = transparent fill with a colored stroke (outline-only letters).
-  // outline = solid fill in the chosen color with a dark stroke around it.
-  const getTextStyle = (color: string): React.CSSProperties => {
-    const fontFamily = FONT_FAMILIES[fontStyle];
-    if (fontStyle === "hollow") {
-      return { fontFamily, color: "transparent", WebkitTextStroke: `1.5px ${color}`, textShadow: "none" } as React.CSSProperties;
-    }
-    if (fontStyle === "outline") {
-      return { fontFamily, color, WebkitTextStroke: "1px rgba(0,0,0,0.6)" } as React.CSSProperties;
-    }
-    return { fontFamily, color };
-  };
-  const hexToRgba = (hex: string, opacity: number) => {
-    const clean = hex.replace("#", "");
-    const r = parseInt(clean.slice(0, 2), 16) || 0;
-    const g = parseInt(clean.slice(2, 4), 16) || 0;
-    const b = parseInt(clean.slice(4, 6), 16) || 0;
-    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-  };
-  const titleRef = useRef<HTMLDivElement>(null);
-  const subtextRef = useRef<HTMLDivElement>(null);
-  const proofRef = useRef<HTMLDivElement>(null);
-  const [editableHeadline, setEditableHeadline]       = useState("");
-  const [editableSubtext, setEditableSubtext]         = useState("");
-  const [uploadedImage, setUploadedImage]             = useState<string | null>(null);
-  const [generatedImage, setGeneratedImage]           = useState<string | null>(null);
-  const [copiedField, setCopiedField]                 = useState<string | null>(null);
-  const [error, setError]                             = useState<string | null>(null);
-  const [cloningMode, setCloningMode]               = useState<"direct"|"stylized"|"reimagine"|"variation">("direct");
-  const [aspectRatio, setAspectRatio]               = useState<"9:16"|"2:3">("9:16");
-  const [isAnalyzingImage, setIsAnalyzingImage]     = useState(false);
-  // Landing page hero — click-to-play demo video (real sound, real controls,
-  // not an autoplay background loop).
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoStarted, setVideoStarted]             = useState(false);
-  const [socialProof, setSocialProof]               = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
-  const [productUrl, setProductUrl]                 = useState("");
-  const [customVisualPrompt, setCustomVisualPrompt] = useState("");
+  // ── Studio state (new UI) ─────────────────────────────────────────────────
+  const [aspectRatio, setAspectRatio]       = useState<AspectRatio>("9:16");
+  const [uploadedImage, setUploadedImage]   = useState<string | null>(null);
+  const [productName, setProductName]       = useState("");
+  const [productUrl, setProductUrl]         = useState("");
+  const [pins, setPins]                     = useState<PinItem[]>(() => getDefaultPins("", ""));
+  const [selectedPinId, setSelectedPinId]   = useState("all");
+  const [previewPin, setPreviewPin]         = useState<PinItem | null>(null);
+  const [hasGenerated, setHasGenerated]     = useState(false);
+  const [isLoading, setIsLoading]           = useState(false);          // SEO/strategy step
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false); // 5 image calls
+  const [error, setError]                   = useState<string | null>(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [socialProof, setSocialProof]       = useState<{ stars?: number; reviews?: string; sold?: string } | null>(null);
+  const [notification, setNotification]     = useState<string | null>(null);
+  const pinsRef = useRef<PinItem[]>(pins);
+  useEffect(() => { pinsRef.current = pins; }, [pins]);
+  // The photo + product name the CURRENT set of pins was generated from (so "Redo" always uses the same product)
+  const sourceRef = useRef<{ b64: string; mime: string; title: string } | null>(null);
 
-  // ── NEW: User state and generation tracking ─────────────────────────────────
+  // Landing page hero — click-to-play demo video
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoStarted, setVideoStarted] = useState(false);
+
   const [userName, setUserName]                       = useState("");
   const [userEmail, setUserEmail]                     = useState("");
   const [userTier, setUserTier]                       = useState<"free" | "starter" | "pro" | "scale">("free");
@@ -182,6 +177,7 @@ export default function App() {
   const [paymentSuccess, setPaymentSuccess]           = useState(false);
   const [isLoadingUser, setIsLoadingUser]             = useState(false);
 
+
   const TIER_LIMITS = { free: 3, starter: 100, pro: 400, scale: 999999 };
   const TIER_NAMES = { free: "Free Trial", starter: "Starter", pro: "Pro", scale: "Scale" };
 
@@ -194,18 +190,6 @@ export default function App() {
   const previewRef = useRef<HTMLDivElement>(null);
 
   // ── Force canvas to exact aspect ratio height regardless of flex parent ───────
-  useEffect(() => {
-    const el = previewRef.current;
-    if (!el) return;
-    const apply = () => {
-      const w = el.offsetWidth;
-      el.style.height = (aspectRatio === "9:16" ? (w * 16 / 9) : (w * 3 / 2)) + "px";
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [aspectRatio]);
   const CREATION_COSTS = { STRATEGY: 1, IMAGE: 1 };
 
   // ── Activate plan directly via email + priceId ───────────────────────────────
@@ -297,6 +281,17 @@ export default function App() {
     finally { setIsLoadingUser(false); }
   };
 
+  const showToast = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  // Real social proof (from /api/generate analyze call) → badge on every pin
+  useEffect(() => {
+    const t = socialBadgeText(socialProof);
+    setPins(prev => prev.map(p => ({ ...p, overlay: { ...p.overlay, badgeText: t, showBadge: !!t } })));
+  }, [socialProof]);
+
   // Auto-fetch social proof when URL is entered
   useEffect(() => {
     const t = setTimeout(() => {
@@ -306,36 +301,275 @@ export default function App() {
     return () => clearTimeout(t);
   }, [productUrl]);
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  const selectAngle = (i: number, angle: ViralAngle) => {
-    setSelectedAngleIndex(i);
-    setEditableHeadline(angle.headlines[0]);
-    setEditableSubtext(angle.subtext[0]);
-    setCustomVisualPrompt(angle.aiImagePrompt || "");
-    // No auto-generation here — every angle (including the first) now
-    // requires an explicit click on "Regenerate Visual Identity". The old
-    // auto-generate-on-first-angle behavior was unreliable, so it's been
-    // removed in favor of one consistent, explicit action for all 5 angles.
+  // ── Analyze image / URL for social proof (free perk) ──────────────────────
+  const analyzeUploadedImage = async (imageData: string | null, url?: string) => {
+    if (!imageData && !url) return;
+    if (!userEmail) return;
+    setIsAnalyzingImage(true);
+    try {
+      const parts: any[] = [];
+      if (imageData?.startsWith("data:"))
+        parts.push({ inlineData: { data: imageData.split(",")[1], mimeType: imageData.split(";")[0].split(":")[1] } });
+      const fu = url && !url.startsWith("http") ? `https://${url}` : url;
+      parts.push({ text:
+        `Analyze this product.${fu ? ` URL: ${fu}.` : ""}
+Detect star ratings, review counts, sold counts.
+Return ONLY valid JSON, no markdown:
+{"hasSocialProof":boolean,"stars":number|null,"reviews":string|null,"sold":string|null}
+Only report numbers that are actually visible or retrievable; never invent them.` });
+      const raw    = await geminiRest("", { jsonMode: true, parts, email: userEmail }).catch(() => "{}");
+      const result = extractAndParseJSON(raw);
+      if (result.hasSocialProof) setSocialProof({ stars: result.stars, reviews: result.reviews, sold: result.sold });
+    } catch { /* non-fatal */ }
+    finally { setIsAnalyzingImage(false); }
+  };
+
+  const handleUploadImage = (file: File) => {
+    if (!file.type.startsWith("image/")) { showToast("Please upload an image file (PNG, JPG or WEBP)."); return; }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const d = reader.result as string;
+      setUploadedImage(d);
+      analyzeUploadedImage(d, productUrl);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ── One image → /api/image (1 credit, refunded server-side on failure) ──────
+  const generateOneImage = async (pinId: string, scene: string, email: string,
+                                  src: { b64: string; mime: string }): Promise<"done" | "nocredit" | "error"> => {
+    const patch = (u: Partial<PinItem>) => setPins(prev => prev.map(p => p.id === pinId ? { ...p, ...u } : p));
+    patch({ imageStatus: "loading", imageError: undefined });
+    try {
+      const fingerprint = await getFingerprint().catch(() => "");
+      for (let attempt = 0; ; attempt++) {
+        const res = await fetch("/api/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: buildImagePrompt(scene), email, fingerprint,
+            imageB64: src.b64, imageMime: src.mime, aspectRatio,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 402) { patch({ imageStatus: "nocredit" }); return "nocredit"; }
+        if (res.status === 429 && attempt < 2) { await sleep(8000 * (attempt + 1)); continue; }
+        if (!res.ok) throw new Error(data?.error || "Image generation failed");
+        if (!data.imageB64) throw new Error("No image returned. Please try again.");
+        patch({ generatedImageUrl: `data:image/png;base64,${data.imageB64}`, imageStatus: "done" });
+        setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
+        setImagesLeft(p => p !== null ? p - CREATION_COSTS.IMAGE : null);
+        return "done";
+      }
+    } catch (err: any) {
+      patch({ imageStatus: "error", imageError: err?.message || "Image generation failed" });
+      return "error";
+    }
+  };
+
+  // Generate the 5 images, 2 at a time, as many as the user's credits allow
+  const runImages = async (list: PinItem[], email: string, credits: number,
+                           src: { b64: string; mime: string }) => {
+    setIsGeneratingImages(true);
+    const allowed = list.slice(0, Math.max(0, credits));
+    const skipped = list.slice(allowed.length);
+    if (skipped.length)
+      setPins(prev => prev.map(p => skipped.some(s => s.id === p.id) ? { ...p, imageStatus: "nocredit" } : p));
+
+    let next = 0;
+    const worker = async () => {
+      while (next < allowed.length) {
+        const pin = allowed[next++];
+        await generateOneImage(pin.id, pin.visualPrompt, email, src);
+      }
+    };
+    await Promise.all([worker(), worker()]);
+
+    setIsGeneratingImages(false);
+    loadUserFromSupabase(email).catch(() => {}); // sync true balance (failed images are refunded)
+    if (skipped.length) {
+      showToast(`Out of credits \u2014 ${skipped.length} image${skipped.length > 1 ? "s" : ""} not created yet.`);
+      setShowOutOfCreditsModal(true);
+    } else {
+      showToast("Done! Your product appears in 5 different settings.");
+    }
+  };
+
+  // ── Generate: SEO/strategy (/api/generate, 1 credit) + 5 images (/api/image, 1 credit each) ──
+  const handleGenerate = async (emailOverride?: string) => {
+    if (isLoading || isGeneratingImages) return;
+    if (!uploadedImage) { setError("Upload a product photo first."); return; }
+    if (!productName.trim()) { setError("Enter the product name first."); return; }
+    const email = emailOverride || userEmail;
+    if (!email) { setEmailModalMode("start"); setShowEmailModal(true); return; }
+    if (generationsLeft < CREATION_COSTS.STRATEGY + CREATION_COSTS.IMAGE) { setShowOutOfCreditsModal(true); return; }
+
+    setIsLoading(true); setError(null);
+    try {
+      const prepared = await prepareImageForApi(uploadedImage);
+      const fullUrl = productUrl && !productUrl.startsWith("http") ? `https://${productUrl}` : productUrl;
+      const prompt = `You are a Pinterest viral growth expert + e-commerce SEO strategist.
+Create 5 high-converting Pinterest pin strategies for: "${productName}".${fullUrl ? `\nProduct/store URL: ${fullUrl}` : ""}
+Visual vibe: Professional, Aesthetic, Lifestyle-focused.
+Target: impulse buyers, home decor, lifestyle, problem-solving audiences.
+
+For each angle provide:
+1. title (angle name)
+2. seoTitle (50-85 characters, high-CTR pin title). It must describe ONLY the product, its standout features and the keywords buyers search for. NEVER mention a location, place, setting or scenery in the title.
+3. hook (1-line attention grabber)
+4. psychology (emotional trigger explanation)
+5. aiImagePrompt (60-90 words): a vivid, specific real-world SCENE describing WHERE and HOW this exact product is being used, held, worn or placed - tied to this angle's psychology. Describe the setting, any people/context, pose, lighting and mood. Each of the 5 angles MUST describe a completely different scene/location/context from the other 4 - no repeated settings. Describe only the new environment and context - do not redescribe or change the product itself, it stays exactly as shown in the reference photo.
+6. headlines (exactly 5 punchy variants)
+7. subtext (exactly 3 short social-proof style lines; do not invent specific numbers)
+8. cta
+9. pinDescription (100+ word SEO-optimised paragraph). Describe the product's features, materials, fit/specs and buyer benefits. Do NOT describe the photo's location or background. The exact product name "${productName}" MUST appear naturally in the text. End with a high-intent call to action.
+10. hashtags (exactly 10 relevant tags)
+11. altText (accessibility description of the pin image: the product, its cut/material/details and how it is styled)
+
+NEGATIVE CONSTRAINTS: No generic phrases like "Shop for Trend", "Unlock Your Potential", "Elevate Your Style", "Buy Now".
+Return ONLY valid JSON, no markdown fences, no explanation:
+{"angles":[{"title":"","seoTitle":"","hook":"","psychology":"","aiImagePrompt":"","headlines":["","","","",""],"subtext":["","",""],"cta":"","pinDescription":"","hashtags":["","","","","","","","","",""],"altText":""}]}`;
+
+      const text = await withRetry(() => geminiRest(prompt, { jsonMode: true, email, type: "strategy" }));
+      const data = extractAndParseJSON(text) as PinStrategy;
+      if (!data.angles?.length) throw new Error("No angles returned. Please try again.");
+      setGenerationsUsed(p => p + CREATION_COSTS.STRATEGY);
+      setImagesLeft(p => p !== null ? p - CREATION_COSTS.STRATEGY : null);
+
+      const defaults = getDefaultPins("", productName);
+      const badge = socialBadgeText(socialProof);
+      const newPins: PinItem[] = defaults.map((d, i) => {
+        const a = data.angles[i % data.angles.length];
+        return {
+          ...d,
+          id: `pin-${i + 1}`,
+          environmentName: a.title || d.environmentName,
+          title: a.seoTitle,
+          seoDescription: a.pinDescription,
+          board: a.title,
+          altText: a.altText,
+          tags: (a.hashtags || []).map(h => (h.startsWith("#") ? h : `#${h}`)),
+          visualPrompt: a.aiImagePrompt,
+          generatedImageUrl: undefined,
+          imageStatus: "loading" as const,
+          imageError: undefined,
+          overlay: {
+            ...d.overlay,
+            headline: a.headlines?.[0] || d.overlay.headline,
+            subtitle: a.subtext?.[0] || "",
+            ctaText: a.cta || d.overlay.ctaText,
+            badgeText: badge,
+            showBadge: !!badge,
+          },
+        };
+      });
+
+      sourceRef.current = { ...prepared, title: productName };
+      setPins(newPins);
+      setHasGenerated(true);
+      setSelectedPinId("all");
+      setIsLoading(false);
+      showToast("SEO ready! Creating 5 images from your product photo...");
+      await runImages(newPins, email, generationsLeft - CREATION_COSTS.STRATEGY, prepared);
+    } catch (err: any) {
+      const msg = err.message || "";
+      if (/credit/i.test(msg)) setShowOutOfCreditsModal(true);
+      setError(
+        msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")
+          ? "Rate limit -- please wait 15 seconds and try again."
+          : msg || "Failed to generate. Please try again."
+      );
+    } finally { setIsLoading(false); }
+  };
+
+  // Redo ONE image (optionally in a different setting) — 1 credit
+  const handleRegeneratePinImage = async (pinId: string, sceneId?: string) => {
+    const src = sourceRef.current;
+    if (!src) { showToast("Generate your pins first."); return; }
+    if (!userEmail) { setEmailModalMode("start"); setShowEmailModal(true); return; }
+    if (generationsLeft < CREATION_COSTS.IMAGE) { setShowOutOfCreditsModal(true); return; }
+    const pin = pinsRef.current.find(p => p.id === pinId);
+    if (!pin) return;
+    let scene = pin.visualPrompt;
+    if (sceneId) {
+      const sc = PHOTOGRAPHIC_SCENES.find(s => s.id === sceneId);
+      if (sc) {
+        scene = sc.tagline;
+        setPins(prev => prev.map(p => p.id === pinId
+          ? { ...p, environmentStyle: sc.style, environmentName: sc.name, visualPrompt: sc.tagline } : p));
+      }
+    }
+    await generateOneImage(pinId, scene, userEmail, src);
+    loadUserFromSupabase(userEmail).catch(() => {});
+  };
+
+  const handleUpdateOverlay = (pinId: string, partial: Partial<TextOverlaySettings>) => {
+    setPins(prev => prev.map(pin => (pinId === "all" || pin.id === pinId)
+      ? { ...pin, overlay: { ...pin.overlay, ...partial } } : pin));
+  };
+  const handleUpdatePin = (pinId: string, updates: Partial<PinItem>) => {
+    setPins(prev => prev.map(pin => (pin.id === pinId ? { ...pin, ...updates } : pin)));
+  };
+
+  // ── Downloads ────────────────────────────────────────────────────────────
+  const handleDownloadAllZip = async () => {
+    const ready = pins.filter(p => p.generatedImageUrl);
+    if (!hasGenerated || !ready.length) { showToast("Generate your pins first."); return; }
+    showToast("Packaging your pins into a ZIP...");
+    const zip = new JSZip();
+    const { width, height } = getDimensions(aspectRatio);
+    try {
+      for (let i = 0; i < pins.length; i++) {
+        const pin = pins[i];
+        if (!pin.generatedImageUrl) continue;
+        const photo = await new Promise<HTMLImageElement | null>(resolve => {
+          const im = new Image();
+          im.onload = () => resolve(im);
+          im.onerror = () => resolve(null);
+          im.src = pin.generatedImageUrl!;
+        });
+        if (!photo) continue;
+        const c = document.createElement("canvas");
+        c.width = width; c.height = height;
+        const ctx = c.getContext("2d");
+        if (!ctx) continue;
+        drawGeneratedPhoto(ctx, photo, width, height);
+        drawTextOverlay(ctx, width, height, pin.overlay);
+        zip.file(`Pin_${i + 1}_${aspectRatio.replace(":", "x")}.png`,
+          c.toDataURL("image/png", 1.0).replace(/^data:image\/png;base64,/, ""), { base64: true });
+      }
+      let guide = `PinViral - Pinterest Pin Package\nGenerated: ${new Date().toLocaleDateString()}\nAspect ratio: ${aspectRatio}\n\n`;
+      pins.forEach((p, idx) => {
+        guide += `--- PIN #${idx + 1} ---\nTITLE:\n${p.title}\n\nSEO DESCRIPTION:\n${p.seoDescription}\n\nBOARD:\n${p.board}\n\nALT TEXT:\n${p.altText}\n\nTAGS:\n${p.tags.join(" ")}\n\n\n`;
+      });
+      zip.file("PINTEREST_SEO_DESCRIPTIONS.txt", guide);
+      const blob = await zip.generateAsync({ type: "blob" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `PinViral_Pins_${aspectRatio.replace(":", "x")}.zip`;
+      link.click();
+      showToast("ZIP downloaded.");
+    } catch (err) {
+      console.error("ZIP failed:", err);
+      showToast("Could not build the ZIP. Download pins one by one instead.");
+    }
+  };
+
+  const handleCopyAllMetadata = () => {
+    if (!hasGenerated) { showToast("Generate your pins first."); return; }
+    let text = "PINVIRAL - 5 PINTEREST PIN PACKAGES\n\n";
+    pins.forEach((p, idx) => {
+      text += `PIN #${idx + 1}\nTITLE:\n${p.title}\n\nSEO DESCRIPTION:\n${p.seoDescription}\n\nBOARD:\n${p.board}\n\nALT TEXT:\n${p.altText}\n\nTAGS:\n${p.tags.join(" ")}\n\n\n`;
+    });
+    navigator.clipboard.writeText(text);
+    showToast("Copied SEO text for all 5 pins.");
   };
 
   const resetApp = () => {
-    setProductName(""); setProductUrl(""); setStrategy(null); setSelectedAngleIndex(null);
-    setUploadedImage(null); setGeneratedImage(null);
-    setSocialProof(null); setEditableHeadline(""); setEditableSubtext("");
-    setCustomVisualPrompt(""); setError(null);
-    setTitleTransform({ x: 0, y: -12, rotation: 0 });
-    setSubtextTransform({ x: 0, y: 16, rotation: 0 });
-    setProofTransform({ x: 0, y: 33 });
-    setTitleScale(1); setSubtextScale(1); setProofScale(1); setEditingField(null);
-    setHeadlineColor("#ffffff"); setSubtextColor("#ffffff"); setFontStyle("sans"); setHighlightBgColor("#000000"); setHighlightOpacity(0.8);
-    setHasAutoGenerated(false);
+    setProductName(""); setProductUrl(""); setUploadedImage(null); setSocialProof(null);
+    setPins(getDefaultPins("", "")); setHasGenerated(false); setError(null);
+    setSelectedPinId("all"); sourceRef.current = null;
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 2000);
   };
 
   // ── First-time email capture (before any free generation, not just checkout) ──
@@ -349,7 +583,7 @@ export default function App() {
     // Sync real credit balance in the background in case this is a
     // returning email — doesn't block continuing below.
     loadUserFromSupabase(email).catch(() => {});
-    generateStrategy(email);
+    handleGenerate(email);
   };
 
   // ── Checkout with email ───────────────────────────────────────────────────────
@@ -398,357 +632,6 @@ export default function App() {
       alert("Payment failed: " + err.message);
     }
   };
-
-  // ── Generate strategy ────────────────────────────────────────────────────────
-  // Accepts an optional emailOverride so confirmStartEmail() can pass the
-  // just-entered email directly — reading `userEmail` state right after
-  // setUserEmail() would still see the stale empty value until next render.
-  const generateStrategy = async (emailOverride?: string) => {
-    if (!productName.trim()) return;
-    const activeEmail = emailOverride || userEmail;
-    // Email is required from the very first generation — it's the only
-    // identity the backend has (no accounts), and it's what the free-trial
-    // abuse check (fingerprint/IP) is keyed against. If we don't have it
-    // yet, collect it now instead of letting the request 400.
-    if (!activeEmail) {
-      setEmailModalMode("start");
-      setShowEmailModal(true);
-      return;
-    }
-    if (generationsLeft < CREATION_COSTS.STRATEGY) {
-      setShowOutOfCreditsModal(true);
-      return;
-    }
-    setIsLoading(true); setError(null);
-    setGeneratedImage(null); setSocialProof(null); setCustomVisualPrompt("");
-    try {
-      const prompt = `You are a Pinterest viral growth expert + e-commerce strategist.
-Create 5 high-converting Pinterest pin strategies for: "${productName}".
-Visual vibe: Professional, Aesthetic, Lifestyle-focused.
-Target: impulse buyers, home decor, lifestyle, problem-solving audiences.
-
-For each angle provide:
-1. title (angle name)
-2. seoTitle (High-CTR pin title, e.g. "Why Every Home Needs This")
-3. hook (1-line attention grabber)
-4. psychology (emotional trigger explanation)
-5. aiImagePrompt (60-90 words): a vivid, specific real-world SCENE describing WHERE and HOW this exact product is being used, held, or placed — tied to this angle's psychology. Describe the setting, any people/context, lighting, and mood. Example for a medical bag: "A confident doctor walks briskly through a modern hospital corridor, the bag swinging naturally from her hand, soft fluorescent lighting, motion blur suggesting urgency." Each of the 5 angles MUST describe a completely different scene/location/context from the other 4 — no repeated settings across angles. Describe only the new environment and context — do not redescribe or change the product itself, it stays exactly as shown in the reference photo.
-6. headlines (exactly 5 punchy variants)
-7. subtext (exactly 3 social-proof lines)
-8. cta
-9. pinDescription (100+ word SEO-optimised paragraph with keywords)
-10. hashtags (exactly 10 relevant tags)
-11. altText (accessibility description of the pin image)
-12. videoPrompts (array of exactly 5 strings): a complete, cohesive 30-45 second UGC-style video ad SCRIPT for this exact product, broken into 5 sequential scenes. Each array entry is ONE scene, formatted exactly like this: "[0-5s] VISUAL: <what's on screen — action, framing, setting> | VO: \"<the exact line spoken or shown as caption>\"". The 5 scenes must follow this arc: (1) scroll-stopping hook in the first 3 seconds, (2) relatable problem or pain point, (3) product reveal with the key benefit demonstrated visually, (4) social proof or a results moment, (5) a strong, specific call to action. Read the 5 entries together as ONE continuous script — consistent tone, natural spoken-language flow, no repeated phrasing between scenes. This is the actual shot list + voiceover script fed directly into AI video tools (Vid.ai, Submagic) — write it as production-ready, not as an abstract summary.
-
-NEGATIVE CONSTRAINTS: No generic phrases like "Shop for Trend", "Unlock Your Potential", "Elevate Your Style", "Buy Now".
-Return ONLY valid JSON, no markdown fences, no explanation:
-{"angles":[{"title":"","seoTitle":"","hook":"","psychology":"","aiImagePrompt":"","headlines":["","","","",""],"subtext":["","",""],"cta":"","pinDescription":"","hashtags":["","","","","","","","","",""],"altText":"","videoPrompts":["","","","",""]}]}`;
-
-      const text = await withRetry(() => geminiRest(prompt, { jsonMode: true, email: activeEmail, type: "strategy" }));
-      const data = extractAndParseJSON(text) as PinStrategy;
-      if (!data.angles?.length) throw new Error("No angles returned. Please try again.");
-      setStrategy(data);
-      selectAngle(0, data.angles[0]);
-      setGenerationsUsed(p => p + CREATION_COSTS.STRATEGY);
-      setImagesLeft(p => p !== null ? p - CREATION_COSTS.STRATEGY : null);
-    } catch (err: any) {
-      const msg = err.message || "";
-      setError(
-        msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED")
-          ? "Rate limit -- please wait 15 seconds and try again."
-          : msg || "Failed to generate strategy. Please try again."
-      );
-    } finally { setIsLoading(false); }
-  };
-
-  // ── Generate image → /api/image ──────────────────────────────────────────────
-  // `opts` lets callers (like selectAngle, right after setSelectedAngleIndex)
-  // pass the angle/index directly instead of reading state that React hasn't
-  // finished updating yet in the same tick.
-  const generateImage = async (opts?: {
-    currentStrategy?: PinStrategy;
-    angleIndex?: number;
-    angle?: ViralAngle;
-    visualPromptOverride?: string;
-    emailOverride?: string;
-  }) => {
-    const active = opts?.currentStrategy || strategy;
-    const angleIdx = opts?.angleIndex ?? selectedAngleIndex;
-    if (!active || angleIdx === null || angleIdx === undefined) return;
-
-    if (generationsLeft < CREATION_COSTS.IMAGE) {
-      setShowOutOfCreditsModal(true);
-      return;
-    }
-
-    setIsGeneratingImage(true); setError(null);
-    try {
-      const activeAngle = opts?.angle || active.angles[angleIdx];
-      const sceneInstruction = (opts?.visualPromptOverride ?? customVisualPrompt) || activeAngle?.aiImagePrompt || "";
-
-      // The uploaded product photo is a fixed asset — the model should
-      // composite it into a new scene, not redesign or reinterpret it.
-      // cloningMode controls exactly how strict that lock is.
-      const IDENTITY_LOCK: Record<typeof cloningMode, string> = {
-        direct:
-          "The product in the reference image is a FIXED ASSET. Reproduce it with 100% visual accuracy — identical shape, proportions, color, material, texture, logo, and every design detail. Do not redesign, restyle, or alter the product in any way. Your only job is to place this exact product into the new scene described below, with realistic lighting, shadows, reflections, and perspective so it looks like a real photograph taken in that location.",
-        stylized:
-          "The product in the reference image must stay clearly recognizable — same shape, proportions, logo, and core design. You may adapt lighting/color grading to match a more artistic, editorial mood in the scene below, but do not change the product's actual design.",
-        reimagine:
-          "The product in the reference image must remain clearly recognizable as the same item (same shape and branding), even though it's being placed into a bold, unexpected new scene described below.",
-        variation:
-          "The product in the reference image should stay recognizable overall. Only apply the specific change requested in the scene description below (e.g. a different colorway or finish) — do not alter anything else about the product.",
-      };
-
-      // Tie the generated scene back to the pin's mood/theme WITHOUT quoting
-      // the literal headline text — quoting it was causing Gemini to render
-      // its own caption/title text directly into the image (confirmed via
-      // testing: generated images had a second, AI-authored title baked in,
-      // duplicating the app's own HTML text overlay). The explicit no-text
-      // instruction below is the other half of the fix.
-      const finalPrompt =
-        `${IDENTITY_LOCK[cloningMode]}\n\n` +
-        `Scene to place the product in: ${sceneInstruction}\n\n` +
-        `IMPORTANT — the identity lock above applies ONLY to the product itself. The BACKGROUND, SETTING, and ENVIRONMENT must be completely different from the reference photo — do not reuse its plain/studio/neutral backdrop. Fully commit to the new scene described above: real location, real lighting, real atmosphere, as different from the original photo's background as possible while keeping the product itself identical.\n\n` +
-        `CRITICAL: Do NOT include any text, words, letters, captions, titles, logos (other than the product's own existing branding), watermarks, or typography anywhere in this image. This must be a pure photographic scene with nothing written on it — all text will be added separately afterward as a design overlay, so any text you render into the image will look duplicated and broken.\n\n` +
-        `Professional Pinterest product photography. Sharp focus on the product as the clear focal point, natural depth of field, lighting consistent with the described scene, lifestyle aesthetic. This must look like a real photograph, not an illustration, render, poster, or advertisement graphic.`;
-
-      const fingerprint = await getFingerprint().catch(() => "");
-      const payload: any = { prompt: finalPrompt, email: opts?.emailOverride || userEmail, fingerprint };
-      if (uploadedImage?.startsWith("data:")) {
-        payload.imageB64  = uploadedImage.split(",")[1];
-        payload.imageMime = uploadedImage.split(";")[0].split(":")[1];
-      }
-      const res  = await fetch("/api/image", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Image generation failed");
-      if (!data.imageB64) throw new Error("No image returned. Please try again.");
-
-      setGeneratedImage(`data:image/png;base64,${data.imageB64}`);
-      setGenerationsUsed(p => p + CREATION_COSTS.IMAGE);
-      setImagesLeft(p => p !== null ? p - CREATION_COSTS.IMAGE : null);
-    } catch (err: any) { setError(err.message || "Failed to generate image."); }
-    finally { setIsGeneratingImage(false); }
-  };
-
-  // ── Analyze image / URL for social proof (free perk, still needs email since
-  // every /api/generate call is now email-keyed — but skip quietly if we don't
-  // have one yet rather than firing a call we know will be rejected) ──────────
-  const analyzeUploadedImage = async (imageData: string | null, url?: string) => {
-    if (!imageData && !url) return;
-    if (!userEmail) return;
-    setIsAnalyzingImage(true);
-    try {
-      const parts: any[] = [];
-      if (imageData?.startsWith("data:"))
-        parts.push({ inlineData: { data: imageData.split(",")[1], mimeType: imageData.split(";")[0].split(":")[1] } });
-      const fu = url && !url.startsWith("http") ? `https://${url}` : url;
-      parts.push({ text:
-        `Analyze this product.${fu ? ` URL: ${fu}.` : ""}
-Detect star ratings, review counts, sold counts.
-Return ONLY valid JSON, no markdown:
-{"hasSocialProof":boolean,"stars":number|null,"reviews":string|null,"sold":string|null,"suggestedHeadline":string,"suggestedSubtext":string}
-No generic CTAs. Focus on social proof and value proposition.` });
-
-      const raw    = await geminiRest("", { jsonMode: true, parts, email: userEmail }).catch(() => "{}");
-      const result = extractAndParseJSON(raw);
-      if (result.hasSocialProof) {
-        setSocialProof({ stars: result.stars, reviews: result.reviews, sold: result.sold });
-        if (result.suggestedHeadline) setEditableHeadline(result.suggestedHeadline);
-        if (result.suggestedSubtext)  setEditableSubtext(result.suggestedSubtext);
-      }
-    } catch { /* non-fatal */ }
-    finally { setIsAnalyzingImage(false); }
-  };
-
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const d = reader.result as string;
-      setUploadedImage(d);
-      analyzeUploadedImage(d, productUrl);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // ── Enhance SEO description ──────────────────────────────────────────────────
-  const enhanceSEO = async () => {
-    if (!strategy || selectedAngleIndex === null) return;
-    setIsEnhancingSEO(true);
-    try {
-      const angle  = strategy.angles[selectedAngleIndex];
-      const text   = await withRetry(() => geminiRest(
-        `Pinterest SEO expert. Enhance this pin description for "${productName}" with more high-performing keywords and long-tail search terms.\nCurrent: "${angle.pinDescription}"\nReturn ONLY the new description text.`,
-        { email: userEmail }
-      ));
-      if (text) {
-        const angles = [...strategy.angles];
-        angles[selectedAngleIndex] = { ...angle, pinDescription: text.trim() };
-        setStrategy({ ...strategy, angles });
-      }
-    } catch { /* non-fatal */ }
-    finally { setIsEnhancingSEO(false); }
-  };
-
-  // ── Download helpers ─────────────────────────────────────────────────────────
-  const downloadImage = async () => {
-    if (!previewRef.current) return;
-    try {
-      // Exact Pinterest dimensions: 1000x1500 (9:16) or 1000x1500 (2:3 = 1000x1333)
-      const W = 1000;
-      const H = aspectRatio === "9:16" ? 1500 : 1333;
-
-      // Measure the rendered element on screen
-      const rect = previewRef.current.getBoundingClientRect();
-      const scaleX = W / rect.width;
-      const scaleY = H / rect.height;
-
-      const url = await toPng(previewRef.current, {
-        cacheBust: true,
-        pixelRatio: Math.max(scaleX, scaleY),
-        canvasWidth:  W,
-        canvasHeight: H,
-        style: {
-          borderRadius: "0",
-          boxShadow: "none",
-          margin: "0",
-          width:  rect.width  + "px",
-          height: rect.height + "px",
-        },
-      });
-
-      const link = Object.assign(document.createElement("a"), {
-        href: url,
-        download: `pinterest-pin-${aspectRatio.replace(":","-")}-${productName.replace(/\s+/g,"-").toLowerCase()||"design"}.png`,
-      });
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      console.error("Download error:", err);
-      setError("Download failed. Right-click the image and select 'Save Image As'.");
-    }
-  };
-
-  // ── Shared ref/setter lookup — used by drag, rotate, resize below so the
-  // logic doesn't need to be duplicated for each of the three elements ────────
-  const refFor = (t: "title" | "subtext" | "proof") =>
-    t === "title" ? titleRef.current : t === "subtext" ? subtextRef.current : proofRef.current;
-
-  // ── Drag handlers — headline, subtext, and social-proof badge each move
-  // completely independently of one another ──────────────────────────────────
-  const handleDragStart = (target: "title" | "subtext" | "proof") => (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    e.preventDefault(); // blocks the browser's own native text-drag/selection gesture, which
-                         // otherwise fights with our positioning and renders a single-line
-                         // "ghost" of the text mid-drag
-    setActiveDrag(target);
-  };
-  const handleDragEnd = () => setActiveDrag(null);
-  const handleDrag = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!activeDrag || !previewRef.current) return;
-    const rect = previewRef.current.getBoundingClientRect();
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const x = Math.max(-40, Math.min(40, ((cx - rect.left) / rect.width)  * 100 - 50));
-    const y = Math.max(-40, Math.min(40, ((cy - rect.top)  / rect.height) * 100 - 50));
-    if (activeDrag === "title")        setTitleTransform(t => ({ ...t, x, y }));
-    else if (activeDrag === "subtext") setSubtextTransform(t => ({ ...t, x, y }));
-    else                                setProofTransform({ x, y });
-  };
-
-  // ── Rotate handlers — headline and subtext each have their own rotate
-  // handle; the badge doesn't rotate ───────────────────────────────────────────
-  const handleRotateStart = (target: "title" | "subtext") => (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setActiveRotate(target);
-  };
-  const handleRotateEnd = () => setActiveRotate(null);
-  const handleRotateMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!activeRotate) return;
-    const ref = refFor(activeRotate);
-    if (!ref) return;
-    const rect = ref.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const angleDeg = (Math.atan2(cy - centerY, cx - centerX) * 180) / Math.PI + 90;
-    if (activeRotate === "title") setTitleTransform(t => ({ ...t, rotation: angleDeg }));
-    else                          setSubtextTransform(t => ({ ...t, rotation: angleDeg }));
-  };
-
-  // ── Resize handlers — drag the corner handle to scale each element,
-  // independent of position/rotation ──────────────────────────────────────────
-  const handleResizeStart = (target: "title" | "subtext" | "proof") => (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const ref = refFor(target);
-    if (!ref) return;
-    const rect = ref.getBoundingClientRect();
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const currentScale = target === "title" ? titleScale : target === "subtext" ? subtextScale : proofScale;
-    resizeStartRef.current = { dist: Math.hypot(cx - centerX, cy - centerY), scale: currentScale };
-    setActiveResize(target);
-  };
-  const handleResizeEnd = () => setActiveResize(null);
-  const handleResizeMove = (e: React.MouseEvent | React.TouchEvent) => {
-    if (!activeResize) return;
-    const ref = refFor(activeResize);
-    if (!ref) return;
-    const rect = ref.getBoundingClientRect();
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const dist = Math.hypot(cx - centerX, cy - centerY);
-    const { dist: startDist, scale: startScale } = resizeStartRef.current;
-    if (startDist < 5) return;
-    const nextScale = Math.max(0.4, Math.min(2.2, startScale * (dist / startDist)));
-    if (activeResize === "title") setTitleScale(nextScale);
-    else if (activeResize === "subtext") setSubtextScale(nextScale);
-    else setProofScale(nextScale);
-  };
-
-  const handleCanvasPointerMove = (e: React.MouseEvent | React.TouchEvent) => {
-    handleDrag(e);
-    handleRotateMove(e);
-    handleResizeMove(e);
-  };
-  const handleCanvasPointerEnd = () => {
-    handleDragEnd();
-    handleRotateEnd();
-    handleResizeEnd();
-  };
-
-  // ── Inline click-to-edit — click text directly on the canvas to edit it,
-  // no separate panel, no scrolling away from the live preview ────────────────
-  const startEditing = (field: "headline" | "subtext") => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingField(field);
-  };
-  const stopEditing = () => setEditingField(null);
-
-  // ── Auto-fit headline font size — shrinks as the text gets longer so it
-  // settles on roughly 1-2 lines instead of wrapping into a tall stack.
-  // This is the BASE size before the manual resize-handle scale is applied
-  // on top of it, so you can still make it bigger/smaller from there. ────────
-  const headlineBaseFontSize = (() => {
-    const len = editableHeadline.length;
-    if (len <= 14) return 34;
-    if (len <= 20) return 29;
-    if (len <= 28) return 24;
-    if (len <= 38) return 19;
-    if (len <= 50) return 16;
-    return 13;
-  })();
 
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -836,7 +719,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
                 {generationsLeft} Left
               </span>
             </div>
-            {strategy && (
+            {hasGenerated && (
               <button onClick={resetApp} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-all">
                 <RefreshCw size={14}/> Next Product
               </button>
@@ -852,7 +735,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
       <main className="max-w-7xl mx-auto px-4 py-8 lg:py-12">
 
         {/* ── User info bar (auto-generated) ─────────────────────────── */}
-        {!strategy && (
+        {!hasGenerated && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
             className="max-w-4xl mx-auto mb-6">
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -881,14 +764,15 @@ No generic CTAs. Focus on social proof and value proposition.` });
           </motion.div>
         )}
 
-        {/* ── Input zone ─────────────────────────────────────────────────────── */}
-        <section className={cn("transition-all duration-700 max-w-4xl mx-auto", strategy ? "mb-8 opacity-40 scale-95 pointer-events-none" : "mb-16")}>
+        {/* ── Studio (new UI) ─────────────────────────────────────────────── */}
+        <section className="max-w-7xl mx-auto mb-16">
+          <div className="max-w-4xl mx-auto">
           <div className="text-center mb-10">
             <div className="inline-flex items-center gap-2 bg-rose-50 text-rose-600 text-[11px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest mb-4">
               <Sparkles size={13}/> 1 photo becomes 5 pins
             </div>
             <h2 className="text-4xl sm:text-5xl font-black text-slate-900 mb-4 tracking-tighter">
-              {strategy ? "Strategy Ready" : "Turn one product photo into scroll-stopping pins"}
+              {hasGenerated ? "Your 5 Pins Are Ready" : "Turn one product photo into scroll-stopping pins"}
             </h2>
             <p className="text-slate-500 text-lg font-medium">
               No design skills, no Canva, no hours lost. <span className="text-rose-600 italic">Go Viral.</span>
@@ -897,7 +781,7 @@ No generic CTAs. Focus on social proof and value proposition.` });
 
           {/* ── Demo video — click to play with real sound and controls,
               not an autoplay background loop. ── */}
-          {!strategy && (
+          {!hasGenerated && (
             <div className="bg-slate-50 rounded-[2rem] p-6 sm:p-8 mb-10 border border-slate-100">
               <div className="relative rounded-2xl overflow-hidden bg-black aspect-video max-w-2xl mx-auto shadow-xl">
                 <video
@@ -934,556 +818,92 @@ No generic CTAs. Focus on social proof and value proposition.` });
               </div>
             </div>
           )}
-
-          <div className="bg-white p-6 sm:p-8 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">1. Product Name</label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400"><Target size={20}/></div>
-                    <input type="text" placeholder="e.g. Minimalist Ceramic Vase"
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-slate-700 font-bold"
-                      value={productName} onChange={e => setProductName(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && generateStrategy()}/>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">2. Social Proof URL <span className="text-slate-300 normal-case font-medium">(optional)</span></label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-slate-400"><ExternalLink size={20}/></div>
-                    <input type="text" placeholder="Paste store URL for reviews"
-                      className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-rose-500 outline-none transition-all text-slate-700 font-bold"
-                      value={productUrl} onChange={e => setProductUrl(e.target.value)}/>
-                  </div>
-                  {isAnalyzingImage && (
-                    <p className="text-[10px] text-violet-500 font-bold ml-1 flex items-center gap-1 animate-pulse">
-                      <Loader2 size={9} className="animate-spin"/> Fetching social proof...
-                    </p>
-                  )}
-                  {socialProof?.stars && (
-                    <p className="text-[10px] text-emerald-600 font-bold ml-1 flex items-center gap-1">
-                      <Check size={9}/> Found: {socialProof.stars}* · {socialProof.reviews}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">3. Product Image</label>
-                <ImageUpload onImageUpload={handleImageUpload} imageUrl={uploadedImage}/>
-              </div>
-            </div>
-
-
-            {/* Generation usage label */}
-            <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
-              <div className="flex items-center gap-2">
-                <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
-                <span className="text-[11px] font-bold text-slate-600">
-                  Generation Usage: <span className="text-slate-900">{generationsUsed}</span> / {generationsTotal}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className={cn("text-[10px] font-black px-2 py-1 rounded-lg",
-                  generationsLeft <= 3 ? "bg-rose-100 text-rose-600" : "bg-emerald-100 text-emerald-600")}>
-                  {generationsLeft} Left
-                </span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  {TIER_NAMES[userTier]}
-                </span>
-              </div>
-            </div>
-
-            {error && (
-              <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
-                <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
-                <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
-                <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
-              </div>
-            )}
-
-            {/* Low credit warning */}
-            {isLowCredit && !strategy && (
-              <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">⚠️</span>
-                  <span className="text-xs font-black text-amber-700">Only <span className="text-amber-900">{generationsLeft}</span> generations left!</span>
-                </div>
-                <button onClick={() => { setPendingPriceId("price_1U5FVUB7i0tTYaLUtyYBs8GR"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
-                  className="text-[10px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-full transition-all shrink-0">
-                  Top Up $9
-                </button>
-              </div>
-            )}
-
-            {!strategy && (
-              <button onClick={() => generateStrategy()} disabled={isLoading || !productName.trim() || !uploadedImage}
-                className="w-full py-5 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-200 disabled:cursor-not-allowed text-white font-black text-xl rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
-                {isLoading ? <Loader2 className="animate-spin" size={24}/> : <><Zap size={24}/> Output 5 Viral Angles &amp; SEO</>}
-              </button>
-            )}
           </div>
+
+          <CreationWorkflowBar
+            productTitle={productName}
+            onProductTitleChange={setProductName}
+            productUrl={productUrl}
+            onProductUrlChange={setProductUrl}
+            subjectImageUrl={uploadedImage || ""}
+            onUploadImage={handleUploadImage}
+            onGenerate={() => handleGenerate()}
+            isGenerating={isLoading || isGeneratingImages}
+          />
+
+          <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-3 bg-white rounded-2xl border border-slate-200 mb-4">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
+              <span className="text-[11px] font-bold text-slate-600">
+                Credits: <span className="text-slate-900">{generationsLeft}</span> left &middot; one upload uses 1 credit for SEO + 1 per image (up to 6)
+              </span>
+            </div>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{TIER_NAMES[userTier]}</span>
+          </div>
+
+          {isAnalyzingImage && (
+            <p className="text-[11px] text-violet-500 font-bold mb-3 flex items-center gap-1 animate-pulse">
+              <Loader2 size={11} className="animate-spin"/> Fetching social proof...
+            </p>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-3 p-4 mb-4 bg-rose-50 border border-rose-100 rounded-2xl">
+              <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
+              <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
+              <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">&times;</button>
+            </div>
+          )}
+
+          {isLowCredit && !hasGenerated && (
+            <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-4">
+              <span className="text-xs font-black text-amber-700">Only <span className="text-amber-900">{generationsLeft}</span> generations left!</span>
+              <button onClick={() => { setPendingPriceId("price_1U5FVUB7i0tTYaLUtyYBs8GR"); setEmailModalMode("checkout"); setShowEmailModal(true); }}
+                className="text-[10px] font-black text-white bg-amber-500 hover:bg-amber-600 px-3 py-1.5 rounded-full transition-all shrink-0">
+                Top Up $9
+              </button>
+            </div>
+          )}
+
+          {hasGenerated && (
+            <>
+              <Navbar
+                aspectRatio={aspectRatio}
+                onAspectRatioChange={setAspectRatio}
+                pins={pins}
+                selectedPinId={selectedPinId}
+                onSelectPinId={setSelectedPinId}
+                onUpdateOverlay={handleUpdateOverlay}
+                onUploadImage={handleUploadImage}
+                onFetchSocialProof={async (url: string) => { setSocialProof(null); await analyzeUploadedImage(null, url); }}
+                isGenerating={isLoading || isGeneratingImages}
+                isFetchingSocialProof={isAnalyzingImage}
+                onDownloadAllZip={handleDownloadAllZip}
+                onCopyAllMetadata={handleCopyAllMetadata}
+                onRegenerateAll={() => handleGenerate()}
+              />
+              <div className="grid gap-6 mt-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+                {pins.map((pin, index) => (
+                  <PinCard
+                    key={pin.id}
+                    pin={pin}
+                    index={index}
+                    aspectRatio={aspectRatio}
+                    hasGenerated={hasGenerated}
+                    isGenerating={isLoading || isGeneratingImages}
+                    onUpdatePin={handleUpdatePin}
+                    onSelectForEdit={(id) => { setSelectedPinId(id); showToast(`Pin #${index + 1} selected. Open the menus above to edit.`); }}
+                    onOpenPreview={(p) => setPreviewPin(p)}
+                    onRegenerateImage={handleRegeneratePinImage}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
-        {/* ── Strategy workspace ─────────────────────────────────────────────── */}
-        {strategy && (
-          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }}
-            className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-            {/* Left panel — comes second on mobile so the canvas (which you're
-                dragging/rotating text on) stays visible above these controls
-                instead of requiring a scroll back up to check your edits. */}
-            <div className="order-2 lg:order-1 lg:col-span-5 space-y-6">
-              <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-100 space-y-6 sticky top-24">
-
-                {/* Generation usage indicator in workspace */}
-                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Zap size={14} className={generationsLeft <= 3 ? "text-rose-500" : "text-emerald-500"}/>
-                    <span className="text-[11px] font-bold text-slate-600">
-                      Used: <span className="text-slate-900">{generationsUsed}</span> / {generationsTotal}
-                    </span>
-                  </div>
-                  <button onClick={() => setShowUpgradeModal(true)}
-                    className="text-[10px] font-black text-rose-600 hover:text-rose-700 uppercase tracking-widest flex items-center gap-1">
-                    <Crown size={12}/> Upgrade
-                  </button>
-                </div>
-
-                {/* Angle selector */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Strategy Angle</label>
-                      <p className="text-[9px] text-rose-500 font-bold italic">Swapping angles is free &amp; instant</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {/* Angle number pills */}
-                      <div className="flex gap-1.5">
-                        {[0,1,2,3,4].map(i => (
-                          <button key={i} onClick={() => selectAngle(i, strategy.angles[i])}
-                            className={cn("w-8 h-8 rounded-full border-2 font-black text-xs transition-all flex items-center justify-center",
-                              selectedAngleIndex === i ? "bg-rose-600 border-rose-600 text-white scale-110 shadow-lg" : "bg-white border-slate-100 text-slate-300 hover:border-rose-300 hover:text-rose-600")}>
-                            {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {selectedAngleIndex !== null && (
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-black text-slate-900 text-sm tracking-tight">{strategy.angles[selectedAngleIndex].title}</h4>
-                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].title, "title")} className="text-slate-300 hover:text-rose-600 transition-colors">
-                          {copiedField === "title" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium italic">
-                        "{strategy.angles[selectedAngleIndex].psychology}"
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* SEO assets */}
-                {selectedAngleIndex !== null && (
-                  <div className="space-y-8 pt-6 border-t border-slate-100">
-
-                    {/* SEO Description */}
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Search size={20} className="text-indigo-600"/></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Pinterest Description</h5>
-                          <div className="flex items-center gap-1">
-                            <button onClick={enhanceSEO} disabled={isEnhancingSEO} title="Enhance SEO with AI"
-                              className="p-1 hover:bg-slate-50 rounded-lg text-violet-400 hover:text-violet-600 disabled:opacity-50 transition-all">
-                              {isEnhancingSEO ? <Loader2 size={13} className="animate-spin"/> : <Zap size={13}/>}
-                            </button>
-                            <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].pinDescription, "desc")}
-                              className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
-                              {copiedField === "desc" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="max-h-28 overflow-y-auto pr-1">
-                          <p className="text-xs text-slate-600 font-medium leading-relaxed">{strategy.angles[selectedAngleIndex].pinDescription}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Alt Text */}
-                    <div className="flex gap-4">
-                      <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0 mt-1"><Accessibility size={20} className="text-amber-600"/></div>
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Alt Text</h5>
-                          <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].altText || "", "altText")}
-                            className="p-1 hover:bg-slate-50 rounded-lg text-slate-300 hover:text-rose-600 transition-all">
-                            {copiedField === "altText" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                          </button>
-                        </div>
-                        <p className="text-[11px] text-slate-400 font-medium italic">
-                          {strategy.angles[selectedAngleIndex].altText || "Professional product visualization for lifestyle context."}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Hashtags */}
-                    <div className="space-y-3 pt-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><Hash size={10}/>Viral Tags</label>
-                        <button onClick={() => copyToClipboard(strategy.angles[selectedAngleIndex].hashtags.join(" "), "tags")}
-                          className="text-slate-300 hover:text-rose-600 transition-colors">
-                          {copiedField === "tags" ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>}
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {strategy.angles[selectedAngleIndex].hashtags.map((tag, i) => (
-                          <span key={i} className="px-2.5 py-1 bg-white border border-slate-100 rounded-lg text-[9px] font-black text-slate-400 uppercase tracking-tight">{tag}</span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Editable overlay fields */}
-                    <div className="grid grid-cols-1 gap-4 border-t border-slate-100 pt-6">
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Headline Override</label>
-                        <input type="text" value={editableHeadline} onChange={e => setEditableHeadline(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Subtext / Social Proof</label>
-                        <input type="text" value={editableSubtext} onChange={e => setEditableSubtext(e.target.value)}
-                          className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-rose-500 outline-none transition-all"/>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Visual controls */}
-                <div className="space-y-6 pt-6 border-t border-slate-100">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Visual Customizer</label>
-
-                  {/* Aspect ratio */}
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ id:"9:16", label:"9:16 vertical" },{ id:"2:3", label:"2:3 classic" }].map(r => (
-                      <button key={r.id} onClick={() => setAspectRatio(r.id as any)}
-                        className={cn("py-2.5 rounded-xl border-2 text-[10px] font-black uppercase transition-all tracking-widest",
-                          aspectRatio === r.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-slate-50 text-slate-300")}>
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Scene environment auto-derived from selected angle */}
-                  {selectedAngleIndex !== null && strategy?.angles[selectedAngleIndex]?.aiImagePrompt && (
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Scene Environment</label>
-                      <div className="px-3 py-2.5 bg-slate-50 border border-slate-100 rounded-xl">
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
-                          {strategy.angles[selectedAngleIndex].aiImagePrompt}
-                        </p>
-                      </div>
-                      <p className="text-[9px] text-slate-300 font-bold italic ml-1">Auto-set from selected angle · 100% product identity preserved</p>
-                    </div>
-                  )}
-
-                  <button onClick={() => generateImage()} disabled={isGeneratingImage}
-                    className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm rounded-2xl shadow-xl shadow-rose-100 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60">
-                    {isGeneratingImage ? <Loader2 className="animate-spin" size={18}/> : <Sparkles size={18}/>}
-                    Regenerate Visual Identity
-                  </button>
-                  <p className="text-[9px] text-slate-400 text-center font-bold italic">
-                    Uses 1 generation · {generationsLeft} remaining · Matches selected angle
-                  </p>
-                </div>
-
-                <button onClick={resetApp}
-                  className="w-full py-3 text-[10px] font-black text-slate-300 hover:text-rose-500 uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2">
-                  <Plus size={14}/> New Campaign
-                </button>
-              </div>
-            </div>
-
-            {/* Right: main visual workspace — comes first on mobile (see order-1
-                below) so the canvas is visible before you scroll to the
-                headline/subtext inputs in the left panel. */}
-            <div className="order-1 lg:order-2 lg:col-span-7 space-y-6">
-              <div className="bg-white p-6 sm:p-10 rounded-[3.5rem] border border-slate-200 shadow-2xl shadow-slate-200/50 flex flex-col">
-                <div className="flex items-center justify-between mb-8">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center border border-slate-100">
-                      {isGeneratingImage ? <Loader2 className="animate-spin text-rose-600" size={18}/> : <Eye size={18} className="text-slate-400"/>}
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-slate-900 tracking-tight">Identity Locked Pin</h3>
-                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest mt-0.5">Final Creative Output</p>
-                    </div>
-                  </div>
-                  <button onClick={downloadImage} className="p-3 bg-slate-50 hover:bg-rose-50 rounded-2xl text-slate-400 hover:text-rose-600 transition-all shadow-sm active:scale-90">
-                    <Download size={20}/>
-                  </button>
-                </div>
-
-                {/* Pin canvas */}
-                <div ref={previewRef}
-                  style={{ aspectRatio: aspectRatio === "9:16" ? "9/16" : "2/3", maxWidth: aspectRatio === "9:16" ? "360px" : "400px", background: "#ffffff" }}
-                  className="rounded-[3.5rem] overflow-hidden relative cursor-crosshair touch-none mx-auto w-full transition-all duration-700 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] flex-shrink-0 self-start"
-                  onMouseMove={handleCanvasPointerMove} onTouchMove={handleCanvasPointerMove}
-                  onMouseUp={handleCanvasPointerEnd} onTouchEnd={handleCanvasPointerEnd}
-                  onMouseLeave={handleCanvasPointerEnd}>
-
-                  {isGeneratingImage ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/90 backdrop-blur-xl z-30">
-                      <div className="relative w-24 h-24 mb-6">
-                        <div className="absolute inset-0 border-8 border-rose-100 rounded-full"/>
-                        <div className="absolute inset-0 border-8 border-rose-600 rounded-full border-t-transparent animate-spin"/>
-                        <div className="absolute inset-0 flex items-center justify-center"><Target size={32} className="text-rose-600 animate-pulse"/></div>
-                      </div>
-                      <p className="font-black text-slate-900 text-xl tracking-tight">Generating...</p>
-                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase tracking-[0.3em]">Identity Preservation 100%</p>
-                    </div>
-                  ) : (
-                    <>
-                      {(generatedImage || uploadedImage) && (
-                        <img src={generatedImage || uploadedImage || ""}  alt="Pin Design"
-                          className="absolute inset-0 w-full h-full object-cover select-none pointer-events-none"
-                          style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
-                          referrerPolicy="no-referrer" draggable={false}/>
-                      )}
-
-                      {/* Headline — its own drag / rotate / resize / click-to-edit.
-                          Smaller default size + less padding so it wraps to
-                          fewer lines instead of stacking 3-4 lines tall. */}
-                      <div className="absolute inset-0 p-4 flex flex-col justify-center items-center pointer-events-none"
-                        style={{ transform: `translate(${titleTransform.x}%, ${titleTransform.y}%) rotate(${titleTransform.rotation}deg) scale(${titleScale})` }}>
-                        <div ref={titleRef} className="relative w-full min-w-0 pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
-                          onMouseDown={handleDragStart("title")} onTouchStart={handleDragStart("title")}>
-                          <button type="button"
-                            className="absolute -top-9 left-1/2 -translate-x-1/2 w-7 h-7 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-grab active:cursor-grabbing pointer-events-auto z-10"
-                            onMouseDown={handleRotateStart("title")} onTouchStart={handleRotateStart("title")}
-                            title="Drag to rotate">
-                            <RotateCw size={12} className="text-slate-500"/>
-                          </button>
-                          <button type="button"
-                            className="absolute -bottom-3 -right-3 w-7 h-7 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-nwse-resize pointer-events-auto z-10"
-                            onMouseDown={handleResizeStart("title")} onTouchStart={handleResizeStart("title")}
-                            title="Drag to resize">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-500">
-                              <path d="M21 3 3 21M21 3v6M21 3h-6M3 21v-6M3 21h6"/>
-                            </svg>
-                          </button>
-                          <motion.div key={editableHeadline} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="px-1 text-center w-full">
-                            {editingField === "headline" ? (
-                              <input autoFocus value={editableHeadline}
-                                onChange={e => setEditableHeadline(e.target.value)}
-                                onBlur={stopEditing} onKeyDown={e => e.key === "Enter" && stopEditing()}
-                                onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
-                                style={{ fontSize: `${headlineBaseFontSize}px`, ...getTextStyle(headlineColor) }}
-                                className="w-full bg-transparent font-black uppercase italic tracking-tighter leading-[0.95] text-center outline-none border-b-2 border-white/50 pb-1 [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%)]"/>
-                            ) : (
-                              <h2 onClick={startEditing("headline")}
-                                style={{ fontSize: `${headlineBaseFontSize}px`, ...getTextStyle(headlineColor), overflowWrap: "break-word", wordBreak: "break-word" }}
-                                className="font-black uppercase italic tracking-tighter leading-[0.95] [text-shadow:_0_10px_40px_rgb(0_0_0_/_95%),_0_4px_10px_rgb(0_0_0_/_60%)] cursor-text w-full max-w-full whitespace-normal break-words">
-                                {editableHeadline}
-                              </h2>
-                            )}
-                          </motion.div>
-                        </div>
-                      </div>
-
-                      {/* Subtext — its own drag / rotate / resize / click-to-edit,
-                          fully independent from the headline above. */}
-                      <div className="absolute inset-0 p-4 flex flex-col justify-center items-center pointer-events-none"
-                        style={{ transform: `translate(${subtextTransform.x}%, ${subtextTransform.y}%) rotate(${subtextTransform.rotation}deg) scale(${subtextScale})` }}>
-                        <div ref={subtextRef} className="relative w-full min-w-0 pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
-                          onMouseDown={handleDragStart("subtext")} onTouchStart={handleDragStart("subtext")}>
-                          <button type="button"
-                            className="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-grab active:cursor-grabbing pointer-events-auto z-10"
-                            onMouseDown={handleRotateStart("subtext")} onTouchStart={handleRotateStart("subtext")}
-                            title="Drag to rotate">
-                            <RotateCw size={10} className="text-slate-500"/>
-                          </button>
-                          <button type="button"
-                            className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-nwse-resize pointer-events-auto z-10"
-                            onMouseDown={handleResizeStart("subtext")} onTouchStart={handleResizeStart("subtext")}
-                            title="Drag to resize">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-500">
-                              <path d="M21 3 3 21M21 3v6M21 3h-6M3 21v-6M3 21h6"/>
-                            </svg>
-                          </button>
-                          {editingField === "subtext" ? (
-                            <input autoFocus value={editableSubtext}
-                              onChange={e => setEditableSubtext(e.target.value)}
-                              onBlur={stopEditing} onKeyDown={e => e.key === "Enter" && stopEditing()}
-                              onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}
-                              style={getTextStyle(subtextColor)}
-                              className="w-full bg-transparent text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] italic text-center outline-none border-b border-white/50 pb-1"/>
-                          ) : (
-                            <p onClick={startEditing("subtext")}
-                              style={getTextStyle(subtextColor)}
-                              className="text-[10px] sm:text-[11px] font-black leading-tight px-4 [text-shadow:_0_4px_12px_rgb(0_0_0_/_95%)] uppercase tracking-[0.2em] opacity-90 italic cursor-text text-center">
-                              {editableSubtext}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Social proof badge — independent, drag to move (no rotation) */}
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                        style={{ transform: `translate(${proofTransform.x}%, ${proofTransform.y}%) scale(${proofScale})` }}>
-                        <div ref={proofRef} className="relative pointer-events-auto cursor-move select-none active:scale-95 transition-transform"
-                          onMouseDown={handleDragStart("proof")} onTouchStart={handleDragStart("proof")}>
-                          <button type="button"
-                            className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-white shadow-lg border border-slate-200 flex items-center justify-center cursor-nwse-resize pointer-events-auto z-10"
-                            onMouseDown={handleResizeStart("proof")} onTouchStart={handleResizeStart("proof")}
-                            title="Drag to resize">
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-500">
-                              <path d="M21 3 3 21M21 3v6M21 3h-6M3 21v-6M3 21h6"/>
-                            </svg>
-                          </button>
-                          <div style={{ backgroundColor: hexToRgba(highlightBgColor, highlightOpacity) }}
-                            className="backdrop-blur-xl border border-white/10 px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 scale-110">
-                            <div className="flex -space-x-1">
-                              {[0,1,2].map(i => (
-                                <div key={i} className="w-5 h-5 rounded-full bg-rose-500 border-2 border-white flex items-center justify-center overflow-hidden">
-                                  <Star size={8} fill="white" className="text-white"/>
-                                </div>
-                              ))}
-                            </div>
-                            <span className="text-[10px] font-black text-white tracking-widest uppercase">
-                              {socialProof?.stars || "4.9"} · {socialProof?.reviews || "850"} REVIEWS
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Quick usage hint — replaces the old single "Text Overlay Size" slider,
-                    since size is now per-element via the corner drag handle above. */}
-                <div className="mt-4 px-1 text-center">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    Click text to edit · Drag to move · Drag corner to resize · Drag top handle to rotate title
-                  </span>
-                </div>
-
-                {/* Headline / subtext variants — moved above Pinterest */}
-                {selectedAngleIndex !== null && (
-                  <>
-                  <div className="mt-4 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Title Variants</label>
-                        <span className="text-[9px] font-black text-rose-500">Pick to swap</span>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].headlines.map((h, i) => (
-                          <button key={i} onClick={() => setEditableHeadline(h)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableHeadline === h ? "bg-rose-600 border-rose-600 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Var {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Social Proof Line</label>
-                      <div className="flex flex-wrap gap-2">
-                        {strategy.angles[selectedAngleIndex].subtext.map((s, i) => (
-                          <button key={i} onClick={() => setEditableSubtext(s)}
-                            className={cn("px-3 py-2.5 text-[10px] font-black rounded-xl border-2 transition-all uppercase tracking-tighter",
-                              editableSubtext === s ? "bg-slate-900 border-slate-900 text-white shadow-lg" : "bg-white border-slate-100 text-slate-400 hover:border-slate-200")}>
-                            Proof {i + 1}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ── Text styling — headline and subtext each get their OWN
-                      color (a single shared color didn't work well against
-                      varied backgrounds); font style is shared, including
-                      two new effects (hollow, outline). Highlight badge
-                      keeps its own color + opacity below. ── */}
-                  <div className="mt-4 border border-slate-100 rounded-2xl p-4 space-y-4 bg-slate-50/50">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Text Style</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Headline Color</label>
-                        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-2 py-1.5">
-                          <input type="color" value={headlineColor} onChange={e => setHeadlineColor(e.target.value)}
-                            className="w-7 h-7 rounded-lg cursor-pointer border-none bg-transparent"/>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{headlineColor}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Subtext Color</label>
-                        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-2 py-1.5">
-                          <input type="color" value={subtextColor} onChange={e => setSubtextColor(e.target.value)}
-                            className="w-7 h-7 rounded-lg cursor-pointer border-none bg-transparent"/>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{subtextColor}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Font Style</label>
-                      <select value={fontStyle} onChange={e => setFontStyle(e.target.value as typeof fontStyle)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500">
-                        <option value="sans">Sans (Default)</option>
-                        <option value="serif">Serif</option>
-                        <option value="mono">Mono</option>
-                        <option value="display">Display / Impact</option>
-                        <option value="elegant">Elegant</option>
-                        <option value="hollow">Hollow (outline only)</option>
-                        <option value="outline">Outline (filled + stroke)</option>
-                      </select>
-                    </div>
-
-                    <div className="h-px bg-slate-200"/>
-
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Highlight Badge</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Background Color</label>
-                        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-2 py-1.5">
-                          <input type="color" value={highlightBgColor} onChange={e => setHighlightBgColor(e.target.value)}
-                            className="w-7 h-7 rounded-lg cursor-pointer border-none bg-transparent"/>
-                          <span className="text-[10px] font-bold text-slate-500 uppercase">{highlightBgColor}</span>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Opacity</label>
-                          <span className="text-[10px] font-bold text-rose-600">{Math.round(highlightOpacity * 100)}%</span>
-                        </div>
-                        <input type="range" min="0" max="1" step="0.05" value={highlightOpacity}
-                          onChange={e => setHighlightOpacity(parseFloat(e.target.value))}
-                          className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-rose-600 mt-2.5"/>
-                      </div>
-                    </div>
-                  </div>
-                  </>
-                )}
-
-
-                {error && (
-                  <div className="mt-6 flex items-start gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
-                    <AlertCircle size={15} className="text-rose-500 mt-0.5 shrink-0"/>
-                    <p className="text-xs font-bold text-rose-700 flex-1">{error}</p>
-                    <button onClick={() => setError(null)} className="text-rose-400 hover:text-rose-600 text-lg leading-none">×</button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
         {/* Empty state */}
-        {!strategy && !isLoading && (
+        {!hasGenerated && !isLoading && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
             <FeatureCard icon={<Zap className="text-rose-500"/>} title="Viral Psychology" desc="Proven impulse-buy triggers ensure your pins get saved."/>
             <FeatureCard icon={<Search className="text-rose-500"/>} title="SEO Optimized" desc="Descriptions packed with high-volume Pinterest keywords."/>
@@ -1706,9 +1126,26 @@ No generic CTAs. Focus on social proof and value proposition.` });
           </motion.div>
         )}
       </AnimatePresence>
+
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-[60] bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold border border-slate-700">
+          <Sparkles size={14} className="text-amber-400"/>
+          <span>{notification}</span>
+        </div>
+      )}
+
+      {previewPin && (
+        <PinterestPreviewModal
+          pin={previewPin}
+          aspectRatio={aspectRatio}
+          productImage={uploadedImage || ""}
+          onClose={() => setPreviewPin(null)}
+        />
+      )}
     </div>
   );
 }
+
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 function ImageUpload({ onImageUpload, imageUrl }: { onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void; imageUrl: string | null }) {
