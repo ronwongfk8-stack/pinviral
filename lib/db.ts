@@ -23,7 +23,7 @@ export const PLAN_DEFS: Record<string, { images: number; videos: number }> = {
   // Standardized to match TIER_LIMITS in App.tsx and PLAN_CONFIG in
   // stripe-webhook.js — these three used to disagree (50 vs 75 vs 100 for
   // starter, 150 vs 250 vs 400 for pro). Now consistent everywhere.
-  free:    { images: 3,    videos: 0   },
+  free:    { images: 4,    videos: 0   },
   starter: { images: 100,  videos: 3   },
   pro:     { images: 400,  videos: 15  },
   scale:   { images: 800,  videos: 50  },
