@@ -921,7 +921,7 @@ Return ONLY valid JSON, no markdown fences, no explanation:
                 Simple, Transparent Pricing
               </h2>
               <p className="text-lg text-slate-500 mb-2">
-                Pay once, generate forever. No subscriptions, no hidden fees.
+               Start free, upgrade when you&apos;re ready. No hidden fees.
               </p>
               <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 px-4 py-2 rounded-full text-sm font-bold mt-4">
                 <Check size={16} />
