@@ -1272,7 +1272,7 @@ function PricingCard({ tier, price, billing, generations, description, note, fea
   const [loading, setLoading] = useState(false);
 
   function handleBuy() {
-    if (tierKey === "free") { onSelect("free"); return; }
+    if (tierKey === "free") { window.scrollTo({ top: 0, behavior: "smooth" }); return; } // free trial starts at the upload box
     const priceId = (PRICE_IDS as Record<string, string>)[tierKey];
     if (!priceId) { alert("Price not configured for this plan."); return; }
     // Open email modal in parent, passing priceId
@@ -1282,7 +1282,7 @@ function PricingCard({ tier, price, billing, generations, description, note, fea
   const isCurrent = currentTier === tierKey;
   const isFree = tierKey === "free";
   // Paid plans are always purchasable — credits stack on top of existing balance
-  const isDisabled = loading || (isFree && isCurrent);
+  const isDisabled = loading;
 
   return (
     <div className={`relative rounded-3xl border-2 p-8 flex flex-col gap-6 min-h-[580px] w-full transition-all duration-300 hover:scale-[1.02] ${
@@ -1339,16 +1339,14 @@ function PricingCard({ tier, price, billing, generations, description, note, fea
         onClick={handleBuy}
         disabled={isDisabled}
         className={`w-full py-4 rounded-xl text-sm font-bold transition-all duration-200 ${
-          isFree && isCurrent
-            ? "bg-emerald-100 text-emerald-700 cursor-default"
-            : isFree
+          isFree
             ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border-2 border-slate-300"
             : isPopular
             ? "bg-gradient-to-r from-rose-500 to-rose-600 text-white hover:from-rose-600 hover:to-rose-700 shadow-lg shadow-rose-200"
             : "bg-slate-900 text-white hover:bg-slate-800 shadow-lg shadow-slate-200"
         }`}
       >
-        {loading ? "Processing..." : isFree && isCurrent ? "Current Plan" : isFree ? "Get Started Free" : isCurrent ? "＋ Add More Credits" : "Subscribe"}
+        {loading ? "Processing..." : isFree ? "Start Free Trial" : isCurrent ? "＋ Add More Credits" : "Subscribe"}
       </button>
     </div>
   );
